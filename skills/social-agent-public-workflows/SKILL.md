@@ -159,28 +159,37 @@ Use this when a recurring planning run is due or the user asks for regular posti
 Product default recommendation:
 
 ```text
-Plan every 2 weeks, publish 3 Facebook posts per week, approval required.
+Start with 3 Facebook posts per week. Pick the posting days based on the project type, then ask the user to approve or customize.
 ```
 
-That produces 6 posts per approval batch.
+For a two-week approval window, 3 posts/week produces 6 posts per batch. This is only the default, not a fixed product limit.
+
+CEO guidance for presentation:
+
+- Do not say “cadence” to normal users.
+- Say “posting rhythm” or “posting plan”.
+- Recommend days based on the product category.
+- Always offer a custom option.
+- Nothing publishes without approval.
 
 Behavior:
 
 1. Call API job `get_recurrence` for the project.
-2. If recurrence is not configured or the user wants a change, ask:
+2. If recurrence is not configured or the user wants a change, ask one two-option question:
 
 ```text
-How should I prepare recurring Facebook content?
+How should I set your Facebook posting rhythm?
 
-1) Recommended: Every 2 weeks, prepare 6 posts for approval
-2) Daily, prepare a smaller batch
+1) Recommended: 3 posts/week on the best days for your project. I’ll suggest the days and prepare posts for approval.
+2) Custom: You choose how many posts and which days.
 ```
 
-3. Store the answer with API job `configure_recurrence`.
-4. When a run is due, generate or request the content batch according to API state.
-5. Present the batch clearly.
-6. Ask for approval before scheduling.
-7. Submit approved posts to the API scheduling job.
+3. If option 1, propose concrete days in plain English, for example `Monday, Wednesday, Friday` for B2B/education/SaaS, or `Tuesday, Thursday, Saturday` for consumer/community products. If uncertain, use `Monday, Wednesday, Friday`.
+4. Store the final answer with API job `configure_recurrence`.
+5. When a run is due, generate or request the content batch according to API state.
+6. Present the batch clearly.
+7. Ask for approval before scheduling.
+8. Submit approved posts to the API scheduling job.
 
 The orchestrator owns recurrence timing, approval state, usage reservation, and schedule intent records. This skill owns only the conversation behavior.
 
