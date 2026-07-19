@@ -61,23 +61,26 @@ agent loads this skill
 
 The agent must not call Supabase or Social Connect/Postiz directly.
 
-## Expected API-driven onboarding loop
+## Expected first-time onboarding loop
 
-1. Call API job `get_next_question` for current project/onboarding state.
-2. If API returns `question`, ask it exactly or with only light user-friendly formatting.
-3. If API returns `options`, show only those options.
-4. Submit user answer with API job `answer_question`.
-5. Continue until API says onboarding is complete or another job is required.
+Collect the core user answers before creating the project record. The API should create the project only after the user has given enough context to make the project meaningful.
 
 Expected backend job/checklist flow:
 
 ```text
 ask project/business/niche name
-→ setup_project using that name
-→ get/answer onboarding question(s)
+→ ask what it is about
+→ ask Facebook goal
+→ ask audience
+→ ask first batch direction
+→ ask brand voice
+→ ask posting rhythm / approval preference
+→ setup_project with collected onboarding_context
 → connect_destination start
 → user opens Social Connect link
-→ trusted Social Connect proof activates destination
+→ user returns and says done
+→ connect_destination verify checks status only
+→ trusted Social Connect proof or server-side confirmation activates destination
 → check_status says schedule_posts or prepare_content_batch
 → agent drafts batch
 → user approves
@@ -89,6 +92,8 @@ Public `connect_destination verify` is only a status check. It must not activate
 ## Flow: first-time onboarding
 
 Use this when the user is starting a new project.
+
+Do not call `setup_project` immediately. First collect the core answers below in chat. Then call `setup_project` once with `display_name`, `timezone` if known, and `onboarding_context` containing the collected answers.
 
 Fallback/dev question sequence if the API questionnaire endpoint is unavailable:
 

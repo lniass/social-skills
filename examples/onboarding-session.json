@@ -1,45 +1,59 @@
 {
-  "pre_project_question": {
-    "ask_user": "What is the name of the project, business, or niche?",
-    "example_answer": "Handled"
-  },
-  "setup_project_request": {
+  "pre_project_questions": [
+    {
+      "ask_user": "What is the name of the project, business, or niche?",
+      "example_answer": "Handled"
+    },
+    {
+      "ask_user": "What is it about? Share a short description, website, or landing page.",
+      "example_answer": "Handled automates social media posting. Facebook is available now, more social media platforms are coming soon."
+    },
+    {
+      "ask_user": "What is the main outcome you want from Facebook right now?\n\n1) Recommended: Grow trust and audience before selling\n2) Drive leads, waitlist signups, or sales now",
+      "example_answer": "1"
+    },
+    {
+      "ask_user": "Who are we trying to reach first?\n\n1) Recommended: Specific users with a clear problem\n2) Broad audience, test and learn",
+      "example_answer": "1"
+    },
+    {
+      "ask_user": "How should I set your Facebook posting rhythm?\n\n1) Recommended: 3 posts/week on the best days for your project. I’ll suggest the days and prepare posts for approval.\n2) Custom: You choose how many posts and which days.",
+      "example_answer": "1"
+    }
+  ],
+  "setup_project_request_after_core_answers": {
     "api_version": "2026-07-01",
     "project_reference_id": "handled",
     "job_type": "setup_project",
     "idempotency_key": "setup-handled-001",
     "inputs": {
-      "display_name": "Handled"
-    }
-  },
-  "get_next_question_response": {
-    "job": {
-      "stage": "question_ready",
-      "result_json": {
-        "questionnaire": {
-          "workflow_key": "social_agent_public_onboarding",
-          "version": 1,
-          "status": "in_progress",
-          "completed": false,
-          "question": {
-            "step_key": "project_about",
-            "field_key": "project_about",
-            "question": "What is it about? Share a short description, website, or landing page.",
-            "required": true
-          },
-          "next_action": "Ask the API-returned question exactly, then submit the answer with answer_question."
-        }
+      "display_name": "Handled",
+      "onboarding_context": {
+        "project_about": "Handled automates social media posting. Facebook is available now, more social media platforms are coming soon.",
+        "facebook_goal": "grow_trust",
+        "target_audience": "specific_problem",
+        "posting_rhythm": "three_posts_per_week",
+        "approval_mode": "batch_required"
       }
     }
   },
-  "answer_question_request": {
+  "connect_destination_request_after_project_setup": {
     "api_version": "2026-07-01",
     "project_reference_id": "handled",
-    "job_type": "answer_question",
-    "idempotency_key": "answer-question-001",
+    "job_type": "connect_destination",
+    "idempotency_key": "connect-handled-001",
     "inputs": {
-      "step_key": "project_about",
-      "answer": "Handled automates social media posting. Facebook is available now, more social media platforms are coming soon."
+      "action": "start"
+    }
+  },
+  "done_verify_request_status_only": {
+    "api_version": "2026-07-01",
+    "project_reference_id": "handled",
+    "job_type": "connect_destination",
+    "idempotency_key": "verify-handled-001",
+    "inputs": {
+      "action": "verify",
+      "pairing_state": "opaque-state-from-connect-link"
     }
   }
 }
