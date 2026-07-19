@@ -1,6 +1,23 @@
 ---
 name: social-agent-public-workflows
 description: Use when a public Social Agent user onboards, updates project settings, connects Facebook, approves content, or runs recurrent posting workflows.
+version: 0.1.0
+author: SimpleTechX / VoiceVine
+license: MIT
+metadata:
+  topics:
+    - social-media
+    - marketing-automation
+    - ai-agents
+    - facebook-pages
+    - approval-workflows
+  agents:
+    - Claude Code
+    - Codex
+    - Cursor
+    - Windsurf
+    - GitHub Copilot
+    - Cline
 ---
 
 # Social Agent public workflows

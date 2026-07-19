@@ -1,19 +1,52 @@
 # social-skills
 
-Reusable public skill packs for the Social Agent experience.
+Public Agent Skills for Social Agent workflows.
 
-This repo is for agent behavior: what the agent asks, says, drafts, and enforces during onboarding/content workflows.
+Install:
 
-It complements `social-agent-orchestrator`:
+```bash
+npx skills add lniass/social-skills
+```
 
-- `social-agent-orchestrator`: hosted API, database-backed state machine, Supabase persistence, Social Connect proof, scheduling/usage gates.
-- `social-skills`: installable agent behavior for public workflows. Skills call the orchestrator API for current questions/state. They do not replace the API or database.
+## What this gives an agent
+
+`social-skills` turns a compatible AI agent into a guided Social Agent operator for Facebook-first social media workflows.
+
+Current skill:
+
+```text
+social-agent-public-workflows
+```
+
+It teaches the agent how to:
+
+- onboard a new social media project one question at a time
+- update project audience, positioning, CTA, cadence, or pause intent
+- guide Facebook Page connection through Social Connect
+- configure recurring posting cadence
+- present content batches for approval before scheduling
+- avoid unsupported platforms or autopilot behavior unless the hosted API enables them
+
+## Architecture
+
+This repo is the **agent behavior layer**.
+
+It complements the private hosted control plane:
+
+```text
+social-agent-orchestrator = hosted API, database state, Social Connect proof, scheduling/usage gates
+social-skills = installable public agent behavior
+```
+
+The skill calls the orchestrator API for current state. It does **not** replace the API/database.
 
 ## Current MVP skill pack
 
-- `skills/social-agent-public-workflows/SKILL.md`
+```text
+skills/social-agent-public-workflows/SKILL.md
+```
 
-Public MVP supports Facebook Pages first. More platforms can be added later as API capabilities and workflow modules.
+Public MVP supports **Facebook Pages first**. More platforms can be added later as API capabilities and workflow modules.
 
 ## Install
 
@@ -23,7 +56,7 @@ Primary Agent Skills install pattern, used by skills.sh examples:
 npx skills add lniass/social-skills
 ```
 
-Equivalent URL form for agents that prefer explicit GitHub URLs:
+Equivalent URL form:
 
 ```bash
 npx skills add https://github.com/lniass/social-skills
@@ -47,7 +80,7 @@ git clone https://github.com/lniass/social-skills.git
 The orchestrator API/database owns:
 
 - questionnaire versions
-- current onboarding step
+- current onboarding/update step
 - answers collected
 - validation rules
 - recurrence settings
@@ -63,3 +96,22 @@ This repo owns:
 - fallback/dev question examples
 - approval wording
 - Facebook-first public MVP guidance
+
+## Directory listing copy
+
+A skills.sh-ready listing draft lives at:
+
+```text
+docs/skills-sh-listing.md
+```
+
+Recommended topics:
+
+```text
+agent-skills
+social-media
+marketing-automation
+ai-agents
+facebook-pages
+approval-workflows
+```
