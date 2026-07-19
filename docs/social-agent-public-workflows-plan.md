@@ -26,7 +26,7 @@ Reason: the public agent must handle onboarding, project updates, Facebook conne
 - [x] Database-backed questionnaire definitions.
 - [x] API job/endpoint for next onboarding question.
 - [x] API job/endpoint for submitting answers.
-- [ ] API-backed update-project flow.
+- [x] API-backed update-project flow.
 - [x] API-backed recurrence settings for public projects.
 - [ ] Recurrent planning run state moved from old file templates into hosted API/database.
 
@@ -81,7 +81,7 @@ Those old defaults remain useful for tests/history but should not be the default
 
 1. Add questionnaire schema/table or reuse existing onboarding state if sufficient. ✅
 2. Add `get_next_question` and `answer_question` job types or equivalent endpoints. ✅
-3. Add update-project flow using the same question engine.
+3. Add update-project flow using the same question engine. ✅
 4. Add recurrence settings to hosted API/database. ✅
 5. Add recurrent planning job that prepares approval batches from API state.
 6. Add API response examples to this repo under `examples/`. ✅

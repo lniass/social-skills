@@ -126,11 +126,12 @@ change CTA
 
 Behavior:
 
-1. Call the orchestrator update-project/check-status flow.
-2. Ask which field to update only if the API asks you to disambiguate.
-3. Send the new answer to the API.
-4. Summarize what changed.
-5. Ask whether future drafts should use the new setting.
+1. Call API job `get_next_update_question`.
+2. Ask the API-returned update question. Ask which field to update only if the API asks you to disambiguate.
+3. Send the new answer with API job `answer_update_question`.
+4. Continue until API says the update questionnaire is complete.
+5. Summarize what changed.
+6. Ask whether future drafts should use the new setting if the API requires confirmation.
 
 Do not edit local files or assume the old project config is current. The API/database is source of truth.
 
