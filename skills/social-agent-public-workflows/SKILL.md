@@ -148,8 +148,8 @@ That produces 6 posts per approval batch.
 
 Behavior:
 
-1. Ask/check API for recurrence settings.
-2. If recurrence is not configured, ask:
+1. Call API job `get_recurrence` for the project.
+2. If recurrence is not configured or the user wants a change, ask:
 
 ```text
 How should I prepare recurring Facebook content?
@@ -158,7 +158,7 @@ How should I prepare recurring Facebook content?
 2) Daily, prepare a smaller batch
 ```
 
-3. Store the answer through the API.
+3. Store the answer with API job `configure_recurrence`.
 4. When a run is due, generate or request the content batch according to API state.
 5. Present the batch clearly.
 6. Ask for approval before scheduling.

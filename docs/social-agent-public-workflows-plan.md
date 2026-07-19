@@ -23,11 +23,11 @@ Reason: the public agent must handle onboarding, project updates, Facebook conne
 - [x] Social Connect trusted proof exists.
 - [x] Scheduling intent boundary exists.
 - [x] Usage/cost cap reserve gate exists.
-- [ ] Database-backed questionnaire definitions.
-- [ ] API job/endpoint for next onboarding/update question.
-- [ ] API job/endpoint for submitting answers.
+- [x] Database-backed questionnaire definitions.
+- [x] API job/endpoint for next onboarding question.
+- [x] API job/endpoint for submitting answers.
 - [ ] API-backed update-project flow.
-- [ ] API-backed recurrence settings for public projects.
+- [x] API-backed recurrence settings for public projects.
 - [ ] Recurrent planning run state moved from old file templates into hosted API/database.
 
 ### Social skills owns agent behavior
@@ -79,12 +79,12 @@ Those old defaults remain useful for tests/history but should not be the default
 
 ## Remaining implementation queue
 
-1. Add questionnaire schema/table or reuse existing onboarding state if sufficient.
-2. Add `get_next_question` and `answer_question` job types or equivalent endpoints.
+1. Add questionnaire schema/table or reuse existing onboarding state if sufficient. ✅
+2. Add `get_next_question` and `answer_question` job types or equivalent endpoints. ✅
 3. Add update-project flow using the same question engine.
-4. Add recurrence settings to hosted API/database.
+4. Add recurrence settings to hosted API/database. ✅
 5. Add recurrent planning job that prepares approval batches from API state.
-6. Add API response examples to this repo under `examples/`.
+6. Add API response examples to this repo under `examples/`. ✅
 7. Verify direct `hermes skills install <raw SKILL.md URL>` works on a clean profile.
 
 ## Public install commands
