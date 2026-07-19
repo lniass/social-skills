@@ -46,10 +46,10 @@ The agent must not call Supabase or Social Connect/Postiz directly.
 
 ## Expected API-driven onboarding loop
 
-1. Call API for current project/onboarding state.
+1. Call API job `get_next_question` for current project/onboarding state.
 2. If API returns `question`, ask it exactly or with only light user-friendly formatting.
 3. If API returns `options`, show only those options.
-4. Submit user answer to API.
+4. Submit user answer with API job `answer_question`.
 5. Continue until API says onboarding is complete or another job is required.
 
 Expected backend job/checklist flow:
@@ -217,15 +217,28 @@ Do not continue expensive generation.
 
 ## Install
 
-Direct install for Hermes users:
+Primary Agent Skills install pattern, shown by skills.sh examples:
+
+```bash
+npx skills add lniass/social-skills
+```
+
+URL form:
+
+```bash
+npx skills add https://github.com/lniass/social-skills
+```
+
+Hermes direct install:
 
 ```bash
 hermes skills install https://raw.githubusercontent.com/lniass/social-skills/main/skills/social-agent-public-workflows/SKILL.md
 ```
 
-Repo tap option, after the repo has any required Hermes registry metadata:
+Portable manual fallback for Claude Code, Codex-style agents, Cursor, Windsurf, or any agent that supports local skill folders:
 
 ```bash
-hermes skills tap add https://github.com/lniass/social-skills
-hermes skills install social-agent-public-workflows
+git clone https://github.com/lniass/social-skills.git
 ```
+
+Then select/copy `skills/social-agent-public-workflows/SKILL.md` in that agent's skill configuration.

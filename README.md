@@ -17,17 +17,29 @@ Public MVP supports Facebook Pages first. More platforms can be added later as A
 
 ## Install
 
+Primary Agent Skills install pattern, used by skills.sh examples:
+
+```bash
+npx skills add lniass/social-skills
+```
+
+Equivalent URL form for agents that prefer explicit GitHub URLs:
+
+```bash
+npx skills add https://github.com/lniass/social-skills
+```
+
 Direct Hermes install:
 
 ```bash
 hermes skills install https://raw.githubusercontent.com/lniass/social-skills/main/skills/social-agent-public-workflows/SKILL.md
 ```
 
-Future tap flow, once this repo has any required registry metadata:
+Manual/portable install for Claude Code, Codex-style agents, Cursor, Windsurf, or any agent that supports Agent Skills folders:
 
 ```bash
-hermes skills tap add https://github.com/lniass/social-skills
-hermes skills install social-agent-public-workflows
+git clone https://github.com/lniass/social-skills.git
+# Then add/select skills/social-agent-public-workflows/SKILL.md in the agent's skills UI or local skills directory.
 ```
 
 ## Source of truth

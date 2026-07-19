@@ -1,0 +1,46 @@
+{
+  "get_next_question_response": {
+    "job": {
+      "stage": "question_ready",
+      "result_json": {
+        "questionnaire": {
+          "workflow_key": "social_agent_public_onboarding",
+          "version": 1,
+          "status": "in_progress",
+          "completed": false,
+          "question": {
+            "step_key": "project_type",
+            "field_key": "project_type",
+            "question": "What should I build your social media system around?",
+            "options": [
+              {
+                "id": "existing_brand",
+                "label": "An existing business, product, or creator brand",
+                "recommended": true
+              },
+              {
+                "id": "choose_focus",
+                "label": "Help me choose a focus first",
+                "recommended": false
+              }
+            ],
+            "required": true
+          },
+          "next_action": "Ask the API-returned question exactly, then submit the answer with answer_question."
+        }
+      }
+    }
+  },
+  "answer_question_request": {
+    "api_version": "2026-07-01",
+    "project_reference_id": "voicevine",
+    "job_type": "answer_question",
+    "idempotency_key": "answer-question-001",
+    "inputs": {
+      "step_key": "project_type",
+      "answer": {
+        "option_id": "existing_brand"
+      }
+    }
+  }
+}
