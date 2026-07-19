@@ -72,7 +72,8 @@ The agent must not call Supabase or Social Connect/Postiz directly.
 Expected backend job/checklist flow:
 
 ```text
-setup_project
+ask project/business/niche name
+→ setup_project using that name
 → get/answer onboarding question(s)
 → connect_destination start
 → user opens Social Connect link
@@ -91,14 +92,14 @@ Use this when the user is starting a new project.
 
 Fallback/dev question sequence if the API questionnaire endpoint is unavailable:
 
-1. Project type
-2. Project identity
+1. Project/business/niche name
+2. What it is about
 3. Facebook goal
 4. Audience
 5. First batch direction
 6. Brand voice
 7. Facebook Page / Social Connect
-8. Recurrent posting cadence
+8. Recurrent posting rhythm
 9. Approval mode
 10. Draft first batch
 

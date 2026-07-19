@@ -1,4 +1,17 @@
 {
+  "pre_project_question": {
+    "ask_user": "What is the name of the project, business, or niche?",
+    "example_answer": "Handled"
+  },
+  "setup_project_request": {
+    "api_version": "2026-07-01",
+    "project_reference_id": "handled",
+    "job_type": "setup_project",
+    "idempotency_key": "setup-handled-001",
+    "inputs": {
+      "display_name": "Handled"
+    }
+  },
   "get_next_question_response": {
     "job": {
       "stage": "question_ready",
@@ -9,21 +22,9 @@
           "status": "in_progress",
           "completed": false,
           "question": {
-            "step_key": "project_type",
-            "field_key": "project_type",
-            "question": "What should I build your social media system around?",
-            "options": [
-              {
-                "id": "existing_brand",
-                "label": "An existing business, product, or creator brand",
-                "recommended": true
-              },
-              {
-                "id": "choose_focus",
-                "label": "Help me choose a focus first",
-                "recommended": false
-              }
-            ],
+            "step_key": "project_about",
+            "field_key": "project_about",
+            "question": "What is it about? Share a short description, website, or landing page.",
             "required": true
           },
           "next_action": "Ask the API-returned question exactly, then submit the answer with answer_question."
@@ -33,14 +34,12 @@
   },
   "answer_question_request": {
     "api_version": "2026-07-01",
-    "project_reference_id": "voicevine",
+    "project_reference_id": "handled",
     "job_type": "answer_question",
     "idempotency_key": "answer-question-001",
     "inputs": {
-      "step_key": "project_type",
-      "answer": {
-        "option_id": "existing_brand"
-      }
+      "step_key": "project_about",
+      "answer": "Handled automates social media posting. Facebook is available now, more social media platforms are coming soon."
     }
   }
 }
