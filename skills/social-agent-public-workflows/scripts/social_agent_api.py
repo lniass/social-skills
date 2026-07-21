@@ -20,7 +20,7 @@ from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 
 API_VERSION = "2026-07-01"
-DEFAULT_API_BASE_URL = "https://api.social-agent.voicevine.ai"
+DEFAULT_API_BASE_URL = "https://social-agent-api.voicevine.ai"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 CREDENTIAL_PATTERN = re.compile(r"sai_[A-Za-z0-9_-]{8,64}\.[A-Za-z0-9_-]{43,256}")
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}

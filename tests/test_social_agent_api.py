@@ -75,6 +75,9 @@ class LocalServer:
 
 
 class SocialAgentAPITests(unittest.TestCase):
+    def test_default_api_base_url_uses_current_production_hostname(self) -> None:
+        self.assertEqual(api.DEFAULT_API_BASE_URL, "https://social-agent-api.voicevine.ai")
+
     def test_capabilities_uses_workspace_bearer_credential(self) -> None:
         with LocalServer() as base_url, patch.dict(
             os.environ,

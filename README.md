@@ -46,7 +46,7 @@ The skill includes a standard-library-only API helper:
 skills/social-agent-public-workflows/scripts/social_agent_api.py
 ```
 
-It reads a workspace-scoped credential from `SOCIAL_AGENT_API_KEY` or `SOCIAL_AGENT_API_KEY_FILE`, defaults to `https://api.social-agent.voicevine.ai`, rejects insecure non-local URLs, and exposes capabilities, project listing, job creation, and job-status reads. It does not expose operator bootstrap.
+It reads a workspace-scoped credential from `SOCIAL_AGENT_API_KEY` or `SOCIAL_AGENT_API_KEY_FILE`, defaults to `https://social-agent-api.voicevine.ai`, rejects insecure non-local URLs, and exposes capabilities, project listing, job creation, and job-status reads. It does not expose operator bootstrap.
 
 ## Current MVP skill pack
 
