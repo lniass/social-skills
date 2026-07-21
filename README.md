@@ -40,6 +40,14 @@ social-skills = installable public agent behavior
 
 The skill calls the orchestrator API for current state. It does **not** replace the API/database.
 
+The skill includes a standard-library-only API helper:
+
+```text
+skills/social-agent-public-workflows/scripts/social_agent_api.py
+```
+
+It reads a workspace-scoped credential from `SOCIAL_AGENT_API_KEY` or `SOCIAL_AGENT_API_KEY_FILE`, defaults to `https://api.social-agent.voicevine.ai`, rejects insecure non-local URLs, and exposes capabilities, project listing, job creation, and job-status reads. It does not expose operator bootstrap.
+
 ## Current MVP skill pack
 
 ```text
@@ -96,6 +104,21 @@ This repo owns:
 - fallback/dev question examples
 - approval wording
 - Facebook-first public MVP guidance
+- the portable, dependency-light hosted API helper
+
+## Credential safety
+
+- Never commit credentials to this repository or a skill directory.
+- Never paste credentials into agent chat.
+- Prefer a protected credential file with mode `0600` on persistent hosts.
+- The controlled-pilot bootstrap operator secret belongs only in the hosted API and operator environment.
+- Public self-service activation will use a hosted browser link; it will not trust an agent-supplied user or workspace ID.
+
+Run helper tests:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
 
 ## Directory listing copy
 

@@ -41,6 +41,10 @@ Reason: the public agent must handle onboarding, project updates, Facebook conne
 - [x] Skill includes Hermes direct install command.
 - [x] Add API contract reference once orchestrator endpoints are implemented: `social-agent-orchestrator/docs/plans/api-driven-questionnaire-contract.md`.
 - [x] Add example JSON session once API response shape is final for MVP: `examples/onboarding-session.json`.
+- [x] Add a dependency-light API helper for capabilities, project listing, job creation, and job-status reads.
+- [x] Read workspace credentials from environment or a protected file without exposing operator bootstrap.
+- [x] Add helper tests for authentication headers, request shape, HTTPS policy, file permissions, and redaction.
+- [ ] Replace controlled operator provisioning with an in-chat browser activation link after the pilot.
 - [ ] Add optional registry/tap metadata if a target platform requires it.
 
 ## Runtime loop

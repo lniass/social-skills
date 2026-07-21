@@ -1,7 +1,7 @@
 ---
 name: social-agent-public-workflows
 description: Use when a public Social Agent user onboards, updates project settings, connects Facebook, approves content, or runs recurrent posting workflows.
-version: 0.1.0
+version: 0.2.0
 author: SimpleTechX / VoiceVine
 license: MIT
 metadata:
@@ -60,6 +60,47 @@ agent loads this skill
 ```
 
 The agent must not call Supabase or Social Connect/Postiz directly.
+
+## Hosted API helper
+
+Use the dependency-light helper shipped with this skill:
+
+```text
+scripts/social_agent_api.py
+```
+
+Credential rules:
+
+- Read the workspace-scoped credential from `SOCIAL_AGENT_API_KEY` or `SOCIAL_AGENT_API_KEY_FILE`.
+- Prefer a mode-`0600` credential file on persistent agent hosts.
+- Never ask the user to paste a credential into chat.
+- Never print the credential, Authorization header, or credential-file contents.
+- Never call the operator bootstrap route from this public skill.
+- The operator bootstrap secret must never exist on a customer agent.
+
+Before onboarding, verify API access:
+
+```bash
+python3 scripts/social_agent_api.py capabilities
+```
+
+Common calls:
+
+```bash
+python3 scripts/social_agent_api.py projects
+
+python3 scripts/social_agent_api.py create-job \
+  --job-type setup_project \
+  --idempotency-key setup-<project-slug>-001 \
+  --project-reference-id <project-slug> \
+  --inputs-json '{"display_name":"<project name>","timezone":"<timezone>"}'
+
+python3 scripts/social_agent_api.py job-status <job-id>
+```
+
+Replace placeholders before execution. Do not include credentials in command arguments. For job-specific input shapes, follow the API-returned checklist and this skill's workflow sections.
+
+If no workspace credential exists during the controlled pilot, stop and report that operator provisioning is required. Do not invent a user ID or workspace ID. After public activation is implemented, this skill will show the API-returned activation link and resume onboarding after approval.
 
 ## Expected first-time onboarding loop
 
