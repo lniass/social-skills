@@ -2,6 +2,8 @@
 
 Use this copy for the public directory page, GitHub repo summary, and launch post.
 
+Status: controlled-pilot draft only. Do not use as unrestricted public-launch copy until hosted readiness, credential activation, and the public-release review are complete.
+
 ## Directory identity
 
 ```text
@@ -11,7 +13,7 @@ lniass/social-skills
 ## Primary install
 
 ```bash
-npx skills add lniass/social-skills
+npx -y skills@1.5.19 add lniass/social-skills
 ```
 
 ## Short title
@@ -23,23 +25,23 @@ Social Agent public workflows
 ## One-line description
 
 ```text
-API-driven agent workflows for onboarding, updating, scheduling, and approving Facebook-first social media projects.
+Controlled-pilot API workflows for onboarding, project updates, destination connection, and approval-gated social media operations.
 ```
 
 ## Longer description
 
-Social Agent public workflows gives AI coding/chat agents a safe public UX layer for social media automation.
+Social Agent public workflows gives compatible agents a controlled-pilot UX layer for hosted social media workflows.
 
 The skill teaches an agent how to:
 
-- onboard a new social media project one question at a time
+- retrieve database-backed onboarding and update questions one at a time
 - update audience, positioning, CTA, cadence, and pause intent
 - guide Facebook Page connection through Social Connect
-- configure recurring posting cadence
+- inspect hosted recurrence status without inventing local configuration questions
 - present approval batches before anything is scheduled
 - refuse unsupported platform or autopilot behavior unless the hosted API enables it
 
-The skill does **not** store state itself. It calls a hosted Social Agent Orchestrator API, which owns questionnaire versions, answers, recurrence settings, usage caps, Social Connect proof, approval state, and scheduling intent records.
+The skill does **not** store state or questionnaire wording itself. It calls a hosted Social Agent Orchestrator API, which owns question text, options, questionnaire versions, answers, recurrence settings, usage caps, Social Connect proof, approval state, and scheduling intent records.
 
 ## Best-fit topics
 
@@ -87,13 +89,13 @@ social-agent-public-workflows
 Description:
 
 ```text
-Use when a public Social Agent user onboards, updates project settings, connects Facebook, approves content, or runs recurrent posting workflows.
+Use for controlled-pilot API-driven onboarding, project updates, destination connection, approvals, and recurrent-status checks.
 ```
 
 ### Install command
 
 ```bash
-npx skills add lniass/social-skills
+npx -y skills@1.5.19 add lniass/social-skills
 ```
 
 ### GitHub link
@@ -110,7 +112,7 @@ Turn an AI agent into a guided Social Agent operator.
 The skill keeps public workflows safe:
 - API-first state
 - Facebook Pages first
-- one question at a time
+- database-backed questions only
 - approval before scheduling
 - no direct Supabase/Postiz access from the agent
 ```
@@ -133,9 +135,10 @@ That split makes the skill usable by multiple agent platforms without exposing d
 - [x] Public GitHub repo exists: `lniass/social-skills`.
 - [x] Skill folder exists under `skills/social-agent-public-workflows/`.
 - [x] `SKILL.md` has name and description frontmatter.
-- [x] README has `npx skills add lniass/social-skills` install command.
+- [x] README has `npx -y skills@1.5.19 add lniass/social-skills` install command.
 - [x] README explains source-of-truth boundary.
 - [x] Skill does not include secrets.
-- [x] Skill is platform-neutral: Hermes, Claude/Codex-style folder agents, Cursor/Windsurf-style agents.
-- [ ] Confirm the repo appears on skills.sh after the CLI/directory indexes it.
+- [x] Agent Skills CLI and complete-directory Hermes installations preserve the helper.
+- [x] Confirmed the repo appears on skills.sh.
+- [ ] Remove the controlled-pilot warning only after public activation and hosted readiness pass.
 - [ ] Optional: add repo topics on GitHub: `agent-skills`, `social-media`, `marketing-automation`, `ai-agents`, `facebook-pages`.

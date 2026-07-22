@@ -34,13 +34,14 @@ Reason: the public agent must handle onboarding, project updates, Facebook conne
 
 - [x] Public workflow skill exists.
 - [x] Skill says API/database is source of truth.
+- [x] Remove all local onboarding and update question copy; questions and options come only from database-backed API responses.
 - [x] Skill includes first-time onboarding behavior.
 - [x] Skill includes update-project behavior.
 - [x] Skill includes recurrent posting behavior.
 - [x] Skill includes approval behavior.
-- [x] Skill includes Hermes direct install command.
+- [x] Skill includes a complete-directory Hermes install command that preserves linked scripts.
 - [x] Add API contract reference once orchestrator endpoints are implemented: `social-agent-orchestrator/docs/plans/api-driven-questionnaire-contract.md`.
-- [x] Add example JSON session once API response shape is final for MVP: `examples/onboarding-session.json`.
+- [x] Add an API-driven example JSON session without hardcoded questionnaire wording: `examples/onboarding-session.json`.
 - [x] Add a dependency-light API helper for capabilities, project listing, job creation, and job-status reads.
 - [x] Read workspace credentials from environment or a protected file without exposing operator bootstrap.
 - [x] Add helper tests for authentication headers, request shape, HTTPS policy, file permissions, and redaction.
@@ -51,7 +52,9 @@ Reason: the public agent must handle onboarding, project updates, Facebook conne
 
 ```text
 agent loads social-agent-public-workflows
-→ agent calls orchestrator API for current state/question
+→ agent resolves the API-provided project context
+→ setup_project creates the minimum project record when needed
+→ agent calls orchestrator questionnaire jobs for current state/question
 → API reads current questionnaire from DB
 → agent asks returned question
 → agent submits answer to API
@@ -60,26 +63,9 @@ agent loads social-agent-public-workflows
 
 Skills must not directly read or write Supabase/Postiz.
 
-## Recurrent posting product default
+## Recurrent posting source of truth
 
-Recommended public MVP default:
-
-```text
-Plan every 2 weeks
-Publish 3 Facebook posts per week
-Prepare 6 posts per approval batch
-Approval required before scheduling
-```
-
-Old repo traces used:
-
-```text
-frequency: daily
-posts_per_run: 5
-approval_mode: batch-required
-```
-
-Those old defaults remain useful for tests/history but should not be the default public product posture.
+The hosted API/database owns recurrence state, defaults, validation, and any questions used to change recurrence. This repository contains no local recurrence question or fallback default. The current controlled-pilot skill can read recurrence and status, but recurrent planning remains incomplete and must not be marketed as production-ready.
 
 ## Remaining implementation queue
 
@@ -89,26 +75,30 @@ Those old defaults remain useful for tests/history but should not be the default
 4. Add recurrence settings to hosted API/database. ✅
 5. Add recurrent planning job that prepares approval batches from API state.
 6. Add API response examples to this repo under `examples/`. ✅
-7. Verify direct `hermes skills install <raw SKILL.md URL>` works on a clean profile.
+7. Verify a clean Agent Skills CLI install contains both `SKILL.md` and the helper. ✅
+8. Verify the complete-directory Hermes installation contains both files and the helper runs. ✅
 
 ## Public install commands
 
 Primary Agent Skills install pattern, shown by skills.sh examples:
 
 ```bash
-npx skills add lniass/social-skills
+npx -y skills@1.5.19 add lniass/social-skills
 ```
 
 URL form:
 
 ```bash
-npx skills add https://github.com/lniass/social-skills
+npx -y skills@1.5.19 add https://github.com/lniass/social-skills
 ```
 
-Hermes direct install:
+Hermes complete-directory install:
 
 ```bash
-hermes skills install https://raw.githubusercontent.com/lniass/social-skills/main/skills/social-agent-public-workflows/SKILL.md
+git clone https://github.com/lniass/social-skills.git
+SKILL_DEST="${HERMES_HOME:-$HOME/.hermes}/skills/social-agent-public-workflows"
+install -d "$SKILL_DEST"
+cp -R social-skills/skills/social-agent-public-workflows/. "$SKILL_DEST/"
 ```
 
 Portable manual fallback:
@@ -117,4 +107,4 @@ Portable manual fallback:
 git clone https://github.com/lniass/social-skills.git
 ```
 
-Then select/copy `skills/social-agent-public-workflows/SKILL.md` in the agent platform that supports skills folders.
+Install or copy the complete `skills/social-agent-public-workflows/` directory in the target platform. Copying only `SKILL.md` omits the helper and is unsupported.
