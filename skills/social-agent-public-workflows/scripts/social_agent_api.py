@@ -22,7 +22,7 @@ from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 API_VERSION = "2026-07-01"
-SKILL_VERSION = "0.2.0"
+SKILL_VERSION = "0.4.0"
 DEFAULT_API_BASE_URL = "https://social-agent-api.voicevine.ai"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 MAX_TIMEOUT_SECONDS = 120.0

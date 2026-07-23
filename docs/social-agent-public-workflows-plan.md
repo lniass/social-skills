@@ -45,25 +45,34 @@ Reason: the public agent must handle onboarding, project updates, Facebook conne
 - [x] Add a dependency-light API helper for capabilities, project listing, job creation, and job-status reads.
 - [x] Read workspace credentials from environment or a protected file without exposing operator bootstrap.
 - [x] Add helper tests for authentication headers, request shape, HTTPS policy, file permissions, and redaction.
-- [x] Make the public user-owned-agent path MCP-first with client-managed OAuth outside chat.
+- [x] Make the public user-owned-agent path guest-first, followed by client-managed MCP OAuth outside chat.
 - [x] Document exact Claude Code, Codex, OpenCode, and Hermes remote MCP setup and re-authentication paths.
 - [x] Preserve the `sai_` helper only as a controlled-pilot fallback without weakening its job allowlist.
+- [x] Add a fixed-origin guest helper with private mode-`0600` resume state and no Authorization header.
+- [x] Add start, resume, answer, and forget behavior without local questionnaire copy.
+- [x] Add guest helper security, redirect, response-bound, state-file, and mock-server tests.
+- [x] Treat `done` only as the trigger for MCP setup/OAuth, never as entitlement proof.
+- [x] Preserve guest state until authenticated claim and configured-project confirmation.
+- [ ] Verify the hosted authenticated MCP claim consumes the local guest handoff without exposing the resume token or OAuth token.
+- [ ] Verify the hosted completed response includes a personalized plan preview and trusted Handled conversion action.
 - [ ] Add optional registry/tap metadata if a target platform requires it.
 
 ## Runtime loop
 
 ```text
 agent loads social-agent-public-workflows
-→ agent resolves the API-provided project context
-→ setup_project creates the minimum project record when needed
-→ agent calls orchestrator questionnaire jobs for current state/question
-→ API reads current questionnaire from DB
+→ guest helper starts or resumes temporary server state
+→ API reads the current questionnaire from DB
 → agent asks returned question
-→ agent submits answer to API
-→ API updates project state and returns next step
+→ guest helper submits the answer
+→ API updates guest state and returns the next step or plan preview
+→ user completes Handled conversion and returns with `done`
+→ MCP client performs OAuth outside chat
+→ hosted entitlement and claim materialize the configured project
+→ hosted generation creates the first persisted caption
 ```
 
-Skills must not directly read or write Supabase/Postiz and must never expose the Supabase developer MCP. Public agents use only the product-specific Social Agent MCP; OAuth tokens remain in the MCP client outside chat.
+Skills must not directly read or write Supabase/Postiz and must never expose the Supabase developer MCP. The only pre-authentication HTTP lane is the bundled fixed-origin guest helper. Authenticated agents use only the product-specific Social Agent MCP; OAuth tokens remain in the MCP client outside chat.
 
 ## Recurrent posting source of truth
 

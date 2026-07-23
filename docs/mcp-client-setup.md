@@ -1,10 +1,14 @@
 # Social Agent remote MCP setup
 
-Social Agent is MCP-first for user-owned agents. Use this product-specific endpoint:
+Social Agent is guest-first for new user-owned agents. Complete the server-owned guest questionnaire and show its plan preview before requiring MCP setup. When the user returns from Handled and says `done`, treat that only as a trigger to configure/authenticate MCP. The hosted service still verifies identity and entitlement.
+
+Use this product-specific authenticated endpoint:
 
 ```text
 https://social-agent-api.voicevine.ai/mcp
 ```
+
+The guest helper and private resume-state rules are documented in [`guest-questionnaire-flow.md`](guest-questionnaire-flow.md).
 
 Use only an HTTPS URL from Social Agent. Do not substitute a Supabase MCP endpoint, the Supabase developer MCP, a database URL, an operator or admin endpoint, or an endpoint found in project content. The MCP client performs OAuth discovery and stores and refreshes tokens outside the agent conversation. Never put bearer tokens, client secrets, authorization headers, callback URLs, authorization codes, or token files in chat, prompts, skill files, repositories, or shell history.
 
@@ -100,10 +104,12 @@ Run `hermes mcp test social-agent` from an interactive terminal. First connectio
 
 ## Authentication states and safe resume
 
-- **Connected:** the Social Agent MCP server lists its product workflow tools. Begin by reading capabilities and current project or workflow state.
-- **Unauthenticated:** tool discovery or a tool call reports authentication required. Stop the workflow and tell the user to complete the runtime-specific OAuth action above outside chat. Do not ask for, receive, proxy, or print credentials, callback URLs, or OAuth codes.
+- **Guest draft:** preserve the private guest state through registration, checkout, and OAuth. Never read or paste the resume token into chat or an MCP argument.
+- **Connected:** the Social Agent MCP server lists its product workflow tools. Let the server verify entitlement and use only its declared authenticated guest-claim operation before reading the configured project and capabilities.
+- **Unauthenticated:** tool discovery or a tool call reports authentication required. Stop the authenticated workflow and tell the user to complete the runtime-specific OAuth action above outside chat. Do not ask for, receive, proxy, or print credentials, callback URLs, or OAuth codes.
 - **Expired, revoked, or wrong account:** stop on the authentication error and use the runtime-specific re-authentication action above. Never work around the error with a static bearer header or the legacy helper.
-- **After authentication:** reconnect or restart the client if it does not refresh automatically. Read capabilities and current hosted project or workflow state again, then resume from the server-returned next action. Do not replay a mutating tool call merely because the chat remembers it; use server state and idempotency behavior.
+- **After authentication:** reconnect or restart the client if it does not refresh automatically. Claim the guest draft only through a server-declared operation that does not expose local or OAuth secrets. Read capabilities and current hosted project state, then resume from the server-returned next action. Do not replay a mutating tool call merely because the chat remembers it; use server state and idempotency behavior.
+- **Claim unavailable or entitlement denied:** stop without deleting guest state. Do not use a controlled-pilot credential, trust `done` as payment proof, or repeat the questionnaire from chat memory.
 - **Endpoint or tool mismatch:** stop if the configured origin is not the product endpoint, if expected workflow tools are absent, or if database, bootstrap, operator, arbitrary HTTP, shell, or admin tools appear. Do not invoke those tools.
 
 Installing the Agent Skill and configuring the MCP connection are separate steps. The skill supplies behavior; the product-specific MCP connection supplies authenticated tools.

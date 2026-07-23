@@ -1,0 +1,508 @@
+#!/usr/bin/env python3
+"""Restricted guest-questionnaire client for Social Agent.
+
+The helper talks only to the fixed Social Agent API origin, stores the opaque
+resume token in a private local state file, and never prints that token. It is
+for the unauthenticated questionnaire only. OAuth and draft claim remain owned
+by the configured Social Agent MCP client and hosted service.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import os
+import re
+import stat
+import sys
+from pathlib import Path
+from typing import Any, IO, Sequence
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+API_VERSION = "2026-07-01"
+SKILL_VERSION = "0.4.0"
+DEFAULT_API_BASE_URL = "https://social-agent-api.voicevine.ai"
+DEFAULT_TIMEOUT_SECONDS = 30.0
+MAX_TIMEOUT_SECONDS = 120.0
+MAX_RESPONSE_BYTES = 1_048_576
+MAX_REQUEST_BYTES = 65_536
+CUSTOM_ORIGIN_ENV = "SOCIAL_AGENT_ALLOW_CUSTOM_API_BASE_URL"
+STATE_FILE_ENV = "SOCIAL_AGENT_GUEST_STATE_FILE"
+TRUE_VALUES = {"1", "true", "yes"}
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+RESUME_TOKEN_PATTERN = re.compile(r"gq_[A-Za-z0-9_-]+")
+CREDENTIAL_PATTERN = re.compile(r"sai_[A-Za-z0-9_.-]+")
+CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
+SENSITIVE_FIELD_PARTS = (
+    "authorization",
+    "password",
+    "secret",
+    "token",
+    "credential",
+    "cookie",
+    "api_key",
+    "access_key",
+    "private_key",
+    "oauth_code",
+    "authorization_code",
+)
+
+
+class GuestQuestionnaireError(RuntimeError):
+    """Safe guest-flow failure that contains no resume token or backend body."""
+
+
+def _is_valid_resume_token(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and 35 <= len(value) <= 131
+        and RESUME_TOKEN_PATTERN.fullmatch(value) is not None
+    )
+
+
+def _contains_sensitive_answer(value: Any) -> bool:
+    if isinstance(value, dict):
+        return any(
+            _is_sensitive_field(key) or _contains_sensitive_answer(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_sensitive_answer(item) for item in value)
+    if isinstance(value, str):
+        return RESUME_TOKEN_PATTERN.search(value) is not None or CREDENTIAL_PATTERN.search(value) is not None
+    return False
+
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(
+        self,
+        req: Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> Request | None:
+        return None
+
+
+def _custom_origin_allowed() -> bool:
+    return os.environ.get(CUSTOM_ORIGIN_ENV, "").strip().lower() in TRUE_VALUES
+
+
+def _validate_api_base_url(raw_url: str) -> str:
+    value = raw_url.strip().rstrip("/")
+    parsed = urlsplit(value)
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise GuestQuestionnaireError("SOCIAL_AGENT_API_BASE_URL contains an invalid port") from exc
+
+    if not parsed.hostname or parsed.username is not None or parsed.password is not None:
+        raise GuestQuestionnaireError("SOCIAL_AGENT_API_BASE_URL must be an origin without user information")
+    if parsed.query or parsed.fragment or parsed.path not in ("", "/"):
+        raise GuestQuestionnaireError("SOCIAL_AGENT_API_BASE_URL must not contain a path, query, or fragment")
+
+    production = urlsplit(DEFAULT_API_BASE_URL)
+    is_production = (
+        parsed.scheme == "https"
+        and parsed.hostname.lower() == production.hostname
+        and port in (None, 443)
+    )
+    if is_production:
+        return DEFAULT_API_BASE_URL
+
+    is_loopback_http = parsed.scheme == "http" and parsed.hostname.lower() in LOCAL_HOSTS and bool(parsed.netloc)
+    if _custom_origin_allowed() and is_loopback_http:
+        return value
+
+    raise GuestQuestionnaireError(
+        f"SOCIAL_AGENT_API_BASE_URL must use {DEFAULT_API_BASE_URL}; "
+        f"{CUSTOM_ORIGIN_ENV}=1 permits only loopback HTTP for controlled development"
+    )
+
+
+def _state_path() -> Path:
+    configured = os.environ.get(STATE_FILE_ENV, "").strip()
+    if configured:
+        path = Path(configured).expanduser()
+    else:
+        state_home = os.environ.get("XDG_STATE_HOME", "").strip()
+        root = Path(state_home).expanduser() if state_home else Path.home() / ".local" / "state"
+        path = root / "social-agent" / "guest-questionnaire.json"
+    if not path.is_absolute():
+        raise GuestQuestionnaireError(f"{STATE_FILE_ENV} must be an absolute path")
+    return path
+
+
+def _validate_private_descriptor(descriptor: int) -> None:
+    file_stat = os.fstat(descriptor)
+    if not stat.S_ISREG(file_stat.st_mode):
+        raise GuestQuestionnaireError("Guest questionnaire state must be a regular file")
+    if os.name == "posix" and file_stat.st_mode & 0o077:
+        raise GuestQuestionnaireError("Guest questionnaire state permissions must be 0600 or stricter")
+    if hasattr(os, "geteuid") and file_stat.st_uid != os.geteuid():
+        raise GuestQuestionnaireError("Guest questionnaire state must be owned by the current user")
+
+
+def _open_state_for_read(path: Path) -> int:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        return os.open(path, flags)
+    except OSError as exc:
+        raise GuestQuestionnaireError("No resumable guest questionnaire was found; start a new one") from exc
+
+
+def _load_state() -> dict[str, str]:
+    path = _state_path()
+    descriptor = _open_state_for_read(path)
+    try:
+        _validate_private_descriptor(descriptor)
+        with os.fdopen(descriptor, "r", encoding="utf-8") as state_file:
+            descriptor = -1
+            raw = state_file.read(8193)
+    except OSError as exc:
+        raise GuestQuestionnaireError("Could not read the guest questionnaire state") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+    if len(raw) > 8192:
+        raise GuestQuestionnaireError("Guest questionnaire state is invalid")
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise GuestQuestionnaireError("Guest questionnaire state is invalid") from exc
+    if not isinstance(parsed, dict):
+        raise GuestQuestionnaireError("Guest questionnaire state is invalid")
+
+    token = parsed.get("resume_token")
+    base_url = parsed.get("api_base_url")
+    expires_at = parsed.get("expires_at")
+    if parsed.get("api_version") != API_VERSION:
+        raise GuestQuestionnaireError("Guest questionnaire state is invalid")
+    if not _is_valid_resume_token(token):
+        raise GuestQuestionnaireError("Guest questionnaire state is invalid")
+    assert isinstance(token, str)  # narrowed by _is_valid_resume_token
+    if not isinstance(base_url, str) or base_url != _api_base_url():
+        raise GuestQuestionnaireError("Guest questionnaire state belongs to a different API origin")
+    if not isinstance(expires_at, str) or not expires_at:
+        raise GuestQuestionnaireError("Guest questionnaire state is invalid")
+    return {"resume_token": token, "api_base_url": base_url, "expires_at": expires_at}
+
+
+def _ensure_private_parent(path: Path) -> None:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    parent_stat = path.parent.stat(follow_symlinks=False)
+    if not stat.S_ISDIR(parent_stat.st_mode):
+        raise GuestQuestionnaireError("Guest questionnaire state parent must be a directory")
+    if hasattr(os, "geteuid") and parent_stat.st_uid != os.geteuid():
+        raise GuestQuestionnaireError("Guest questionnaire state parent must be owned by the current user")
+    if os.name == "posix" and parent_stat.st_mode & 0o077:
+        raise GuestQuestionnaireError("Guest questionnaire state parent permissions must be 0700 or stricter")
+
+
+def _save_state(*, token: str, expires_at: str, base_url: str) -> None:
+    path = _state_path()
+    _ensure_private_parent(path)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    payload = json.dumps(
+        {"api_version": API_VERSION, "api_base_url": base_url, "expires_at": expires_at, "resume_token": token},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    try:
+        descriptor = os.open(path, flags, 0o600)
+    except FileExistsError as exc:
+        raise GuestQuestionnaireError("A guest questionnaire is already saved; resume or forget it first") from exc
+    except OSError as exc:
+        raise GuestQuestionnaireError("Could not create the private guest questionnaire state") from exc
+    try:
+        with os.fdopen(descriptor, "wb") as state_file:
+            descriptor = -1
+            state_file.write(payload)
+            state_file.flush()
+            os.fsync(state_file.fileno())
+    except OSError as exc:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise GuestQuestionnaireError("Could not save the guest questionnaire state") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _forget_state() -> None:
+    path = _state_path()
+    try:
+        _load_state()
+    except GuestQuestionnaireError:
+        if not path.exists() and not path.is_symlink():
+            return
+        raise
+    try:
+        path.unlink()
+    except OSError as exc:
+        raise GuestQuestionnaireError("Could not remove the guest questionnaire state") from exc
+
+
+def _api_base_url() -> str:
+    return _validate_api_base_url(os.environ.get("SOCIAL_AGENT_API_BASE_URL", DEFAULT_API_BASE_URL))
+
+
+def _request_timeout(value: float) -> float:
+    if not math.isfinite(value) or value <= 0 or value > MAX_TIMEOUT_SECONDS:
+        raise GuestQuestionnaireError(
+            f"Timeout must be greater than 0 and no more than {MAX_TIMEOUT_SECONDS:g} seconds"
+        )
+    return value
+
+
+def _read_limited(response: Any) -> bytes:
+    payload = response.read(MAX_RESPONSE_BYTES + 1)
+    if len(payload) > MAX_RESPONSE_BYTES:
+        raise GuestQuestionnaireError("Social Agent API response exceeded the safe size limit")
+    return payload
+
+
+def _redact_text(value: str, token: str | None = None) -> str:
+    if token:
+        value = value.replace(token, "[REDACTED]")
+    return RESUME_TOKEN_PATTERN.sub("[REDACTED]", value)
+
+
+def _is_sensitive_field(key: object) -> bool:
+    normalized = re.sub(r"[^a-z0-9]+", "_", str(key).lower()).strip("_")
+    return any(part in normalized for part in SENSITIVE_FIELD_PARTS)
+
+
+def _safe_output(value: Any, token: str | None = None) -> Any:
+    if isinstance(value, dict):
+        output: dict[object, Any] = {}
+        for key, item in value.items():
+            safe_key: object = _redact_text(key, token) if isinstance(key, str) else key
+            safe_item = "[REDACTED]" if _is_sensitive_field(key) else _safe_output(item, token)
+            if safe_key in output:
+                safe_key = "[REDACTED_DUPLICATE_KEY]"
+            output[safe_key] = safe_item
+        return output
+    if isinstance(value, list):
+        return [_safe_output(item, token) for item in value]
+    if isinstance(value, str):
+        return _redact_text(value, token)
+    return value
+
+
+def _request_json(
+    method: str,
+    path: str,
+    *,
+    token: str | None = None,
+    body: dict[str, Any] | None = None,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    base_url = _api_base_url()
+    url = f"{base_url}/{path.lstrip('/')}"
+    encoded_body = None if body is None else json.dumps(body, separators=(",", ":")).encode("utf-8")
+    if encoded_body is not None and len(encoded_body) > MAX_REQUEST_BYTES:
+        raise GuestQuestionnaireError("Guest questionnaire answer exceeded the safe size limit")
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": f"social-agent-public-workflows-guest/{SKILL_VERSION}",
+    }
+    if token:
+        if not _is_valid_resume_token(token):
+            raise GuestQuestionnaireError("Guest questionnaire state is invalid")
+        headers["X-Guest-Resume-Token"] = token
+    if encoded_body is not None:
+        headers["Content-Type"] = "application/json"
+
+    request = Request(url, data=encoded_body, headers=headers, method=method.upper())
+    opener = build_opener(_NoRedirectHandler())
+    try:
+        with opener.open(request, timeout=_request_timeout(timeout)) as response:
+            response_payload = _read_limited(response)
+    except HTTPError as exc:
+        _read_limited(exc)
+        raise GuestQuestionnaireError(f"Social Agent API returned HTTP {exc.code}") from exc
+    except URLError as exc:
+        reason = _redact_text(str(exc.reason), token)
+        raise GuestQuestionnaireError(f"Could not reach the Social Agent API: {reason}") from exc
+
+    try:
+        parsed = json.loads(response_payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise GuestQuestionnaireError("Social Agent API returned an invalid JSON response") from exc
+    if not isinstance(parsed, dict):
+        raise GuestQuestionnaireError("Social Agent API returned an unexpected JSON response")
+    return parsed
+
+
+def _require_nonempty_string(value: object, field: str, *, maximum: int = 4096) -> str:
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > maximum
+        or CONTROL_CHARACTER_PATTERN.search(value)
+    ):
+        raise GuestQuestionnaireError(f"Social Agent API returned an invalid {field}")
+    return value
+
+
+def _validate_questionnaire_response(result: dict[str, Any], *, expect_token: bool) -> dict[str, Any]:
+    if result.get("api_version") != API_VERSION:
+        raise GuestQuestionnaireError("Social Agent API returned an unsupported API version")
+    _require_nonempty_string(result.get("request_id"), "request ID", maximum=256)
+    _require_nonempty_string(result.get("expires_at"), "guest expiry", maximum=128)
+
+    token = result.get("resume_token")
+    if expect_token:
+        if not _is_valid_resume_token(token):
+            raise GuestQuestionnaireError("Social Agent API did not return a valid guest resume token")
+    elif token is not None:
+        raise GuestQuestionnaireError("Social Agent API unexpectedly returned a new guest resume token")
+
+    questionnaire = result.get("questionnaire")
+    if not isinstance(questionnaire, dict):
+        raise GuestQuestionnaireError("Social Agent API returned an invalid questionnaire")
+    _require_nonempty_string(questionnaire.get("workflow_key"), "workflow key", maximum=120)
+    version = questionnaire.get("version")
+    if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+        raise GuestQuestionnaireError("Social Agent API returned an invalid workflow version")
+    _require_nonempty_string(questionnaire.get("session_id"), "questionnaire session", maximum=256)
+    status = questionnaire.get("status")
+    completed = questionnaire.get("completed")
+    if status not in {"in_progress", "completed"} or not isinstance(completed, bool):
+        raise GuestQuestionnaireError("Social Agent API returned an invalid questionnaire status")
+    if completed != (status == "completed"):
+        raise GuestQuestionnaireError("Social Agent API returned inconsistent questionnaire completion state")
+    if not isinstance(questionnaire.get("answers"), dict) or not isinstance(
+        questionnaire.get("completed_steps"), list
+    ):
+        raise GuestQuestionnaireError("Social Agent API returned invalid questionnaire progress")
+
+    _require_nonempty_string(questionnaire.get("next_action"), "next action")
+    if completed:
+        if "question" in questionnaire and questionnaire["question"] is not None:
+            raise GuestQuestionnaireError("Social Agent API returned a question for a completed questionnaire")
+    else:
+        question = questionnaire.get("question")
+        if not isinstance(question, dict):
+            raise GuestQuestionnaireError("Social Agent API did not return the current questionnaire step")
+        _require_nonempty_string(question.get("step_key"), "step key", maximum=120)
+        _require_nonempty_string(question.get("question"), "question text")
+        options = question.get("options")
+        if options is not None and not isinstance(options, list):
+            raise GuestQuestionnaireError("Social Agent API returned invalid question options")
+    return result
+
+
+def _json_value(raw_value: str) -> Any:
+    try:
+        return json.loads(raw_value)
+    except json.JSONDecodeError as exc:
+        raise argparse.ArgumentTypeError(f"invalid JSON: {exc.msg}") from exc
+
+
+def _start(timeout: float) -> dict[str, Any]:
+    path = _state_path()
+    if path.exists() or path.is_symlink():
+        raise GuestQuestionnaireError("A guest questionnaire is already saved; resume or forget it first")
+    result = _validate_questionnaire_response(
+        _request_json("POST", "/v1/guest/questionnaire", timeout=timeout), expect_token=True
+    )
+    token = result.get("resume_token")
+    expires_at = result.get("expires_at")
+    if not _is_valid_resume_token(token):
+        raise GuestQuestionnaireError("Social Agent API did not return a valid guest resume token")
+    assert isinstance(token, str)  # narrowed by _is_valid_resume_token
+    if not isinstance(expires_at, str) or not expires_at:
+        raise GuestQuestionnaireError("Social Agent API did not return a valid guest expiry")
+    _save_state(token=token, expires_at=expires_at, base_url=_api_base_url())
+    output = _safe_output(result, token)
+    output["resume_saved"] = True
+    return output
+
+
+def _resume(timeout: float) -> dict[str, Any]:
+    state = _load_state()
+    result = _validate_questionnaire_response(
+        _request_json("GET", "/v1/guest/questionnaire", token=state["resume_token"], timeout=timeout),
+        expect_token=False,
+    )
+    return _safe_output(result, state["resume_token"])
+
+
+def _answer(*, step_key: str, answer: Any, timeout: float) -> dict[str, Any]:
+    if not 1 <= len(step_key) <= 120 or CONTROL_CHARACTER_PATTERN.search(step_key):
+        raise GuestQuestionnaireError("The server-returned step key is invalid")
+    if not isinstance(answer, dict):
+        raise GuestQuestionnaireError("Guest questionnaire answers must be JSON objects")
+    if _contains_sensitive_answer(answer):
+        raise GuestQuestionnaireError("Guest questionnaire answers must not contain credentials or sensitive fields")
+    state = _load_state()
+    result = _validate_questionnaire_response(
+        _request_json(
+            "POST",
+            "/v1/guest/questionnaire/answer",
+            token=state["resume_token"],
+            body={"api_version": API_VERSION, "step_key": step_key, "answer": answer},
+            timeout=timeout,
+        ),
+        expect_token=False,
+    )
+    return _safe_output(result, state["resume_token"])
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Use the unauthenticated Social Agent guest questionnaire without exposing its resume token"
+    )
+    parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS, help="request timeout in seconds")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers.add_parser("start", help="start a guest questionnaire and save its resume token privately")
+    subparsers.add_parser("resume", help="read the current server-owned questionnaire state")
+    answer = subparsers.add_parser("answer", help="submit an answer for the current server-returned step")
+    answer.add_argument("--step-key", required=True)
+    answer.add_argument("--answer-json", type=_json_value, required=True)
+    subparsers.add_parser("forget", help="remove the local resume state after a successful authenticated claim")
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        if args.command == "start":
+            result = _start(args.timeout)
+        elif args.command == "resume":
+            result = _resume(args.timeout)
+        elif args.command == "answer":
+            result = _answer(step_key=args.step_key, answer=args.answer_json, timeout=args.timeout)
+        elif args.command == "forget":
+            _forget_state()
+            result = {"forgotten": True}
+        else:  # pragma: no cover
+            raise GuestQuestionnaireError("Unsupported command")
+    except GuestQuestionnaireError as exc:
+        print(json.dumps({"ok": False, "error": _redact_text(str(exc))}, ensure_ascii=False), file=sys.stderr)
+        return 1
+
+    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

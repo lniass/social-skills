@@ -2,7 +2,7 @@
 
 Use this copy for the public directory page, GitHub repo summary, and launch post.
 
-Status: MCP-first public setup draft. The legacy API helper remains controlled-pilot only.
+Status: guest-first public setup draft. Authenticated continuation uses MCP; the legacy API helper remains controlled-pilot only.
 
 ## Directory identity
 
@@ -25,23 +25,23 @@ Social Agent public workflows
 ## One-line description
 
 ```text
-MCP-first workflows for authenticated onboarding, project updates, destination connection, and approval-gated social media operations.
+Guest-first onboarding followed by authenticated MCP workflows for project updates, destination connection, and approval-gated social media operations.
 ```
 
 ## Longer description
 
-Social Agent public workflows gives user-owned agents an MCP-first UX layer for hosted social media workflows. Claude Code, Codex, OpenCode, and Hermes connect to the product-specific remote Social Agent MCP endpoint, while each client manages OAuth tokens outside chat.
+Social Agent public workflows lets user-owned agents begin a server-owned questionnaire before login. A restricted helper preserves the opaque resume token in a private local file. After the hosted conversion step, Claude Code, Codex, OpenCode, and Hermes connect to the product-specific remote Social Agent MCP endpoint, while each client manages OAuth tokens outside chat.
 
 The skill teaches an agent how to:
 
-- retrieve database-backed onboarding and update questions one at a time
+- retrieve database-backed guest onboarding and authenticated update questions one at a time
 - update audience, positioning, CTA, cadence, and pause intent
 - guide Facebook Page connection through Social Connect
 - inspect hosted recurrence status without inventing local configuration questions
 - present approval batches before anything is scheduled
 - refuse unsupported platform or autopilot behavior unless the hosted API enables it
 
-The skill does **not** store state, credentials, OAuth codes, or questionnaire wording. It uses the hosted Social Agent MCP, whose service owns question text, options, questionnaire versions, answers, recurrence settings, usage caps, Social Connect proof, approval state, and scheduling intent records. It never exposes the Supabase developer MCP or arbitrary/admin tools.
+The skill stores only an opaque guest resume token in a private local state file. It does **not** store OAuth credentials, authentication codes, or questionnaire wording. The hosted Social Agent service owns question text, options, questionnaire versions, answers, recurrence settings, usage caps, Social Connect proof, approval state, and scheduling intent records. It never exposes the Supabase developer MCP or arbitrary/admin tools.
 
 ## Best-fit topics
 
@@ -86,7 +86,7 @@ social-agent-public-workflows
 Description:
 
 ```text
-Use for MCP-first authenticated onboarding, project updates, destination connection, approvals, and recurrent-status checks.
+Use for guest-first onboarding, authenticated project workflows, destination connection, approvals, and recurrent-status checks.
 ```
 
 ### Install command
@@ -107,7 +107,8 @@ https://github.com/lniass/social-skills
 Turn an AI agent into a guided Social Agent operator.
 
 The skill keeps public workflows safe:
-- MCP-first authenticated state
+- guest-first questionnaire with private resume state
+- client-managed MCP authentication after conversion
 - Facebook Pages first
 - database-backed questions only
 - approval before scheduling

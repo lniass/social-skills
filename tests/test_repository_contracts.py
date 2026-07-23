@@ -6,7 +6,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_PATH = ROOT / "skills" / "social-agent-public-workflows" / "SKILL.md"
-HELPER_PATH = ROOT / "skills" / "social-agent-public-workflows" / "scripts" / "social_agent_api.py"
+AUTH_HELPER_PATH = ROOT / "skills" / "social-agent-public-workflows" / "scripts" / "social_agent_api.py"
+GUEST_HELPER_PATH = ROOT / "skills" / "social-agent-public-workflows" / "scripts" / "guest_questionnaire.py"
 MCP_SETUP_PATH = ROOT / "docs" / "mcp-client-setup.md"
 
 
@@ -17,8 +18,14 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn("Permission is hereby granted, free of charge", license_text)
         self.assertIn('THE SOFTWARE IS PROVIDED "AS IS"', license_text)
 
-    def test_skill_contains_no_local_questionnaire_copy(self) -> None:
-        skill = SKILL_PATH.read_text(encoding="utf-8")
+    def test_installable_skill_contains_no_local_questionnaire_copy(self) -> None:
+        installable_files = sorted(
+            path
+            for path in SKILL_PATH.parent.rglob("*")
+            if path.is_file() and path.suffix in {".md", ".py", ".json", ".yaml", ".yml"}
+        )
+        self.assertTrue(installable_files)
+        combined = "\n".join(path.read_text(encoding="utf-8") for path in installable_files)
         forbidden = (
             "Fallback/dev question sequence",
             "API has no questionnaire endpoint yet",
@@ -26,10 +33,10 @@ class RepositoryContractTests(unittest.TestCase):
         )
         for value in forbidden:
             with self.subTest(value=value):
-                self.assertNotIn(value, skill)
-        self.assertNotIn("?", skill)
-        self.assertIn("Every onboarding and update question must come from", skill)
-        self.assertIn("Do not ask locally defined fallback questions", skill)
+                self.assertNotIn(value, combined)
+        self.assertNotIn("?", combined)
+        self.assertIn("Every onboarding and update question must come from", combined)
+        self.assertIn("Do not ask locally defined fallback questions", combined)
 
     def test_example_is_api_driven_without_question_copy(self) -> None:
         example_text = (ROOT / "examples" / "onboarding-session.json").read_text(encoding="utf-8")
@@ -47,14 +54,18 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertNotIn(raw_install, skill)
         self.assertIn("cp -R social-skills/skills/social-agent-public-workflows/.", readme)
         self.assertIn("cp -R social-skills/skills/social-agent-public-workflows/.", skill)
-        self.assertTrue(HELPER_PATH.is_file())
+        self.assertTrue(AUTH_HELPER_PATH.is_file())
+        self.assertTrue(GUEST_HELPER_PATH.is_file())
 
-    def test_public_skill_is_mcp_first_with_client_managed_oauth(self) -> None:
+    def test_public_skill_is_guest_first_then_uses_client_managed_oauth(self) -> None:
         skill = SKILL_PATH.read_text(encoding="utf-8")
-        self.assertIn("Use the Social Agent MCP first", skill)
-        self.assertIn("The MCP client, not the conversation, performs OAuth", skill)
+        self.assertIn("start with the bundled restricted guest helper", skill)
+        self.assertIn("Guest-first runtime flow", skill)
+        self.assertIn("MCP client, not the conversation, performs OAuth", skill)
         self.assertIn("OAuth happens in the MCP client outside chat", skill)
         self.assertIn("https://social-agent-api.voicevine.ai/mcp", skill)
+        self.assertIn("https://handled.voicevine.ai/pricing", skill)
+        self.assertIn("It is never proof of login, payment, subscription, or entitlement", skill)
         self.assertIn("Controlled-pilot helper fallback", skill)
         self.assertIn("It is not a public OAuth fallback", skill)
 
@@ -119,14 +130,14 @@ class RepositoryContractTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertNotIn(value, combined)
         self.assertIn("Never print, repeat, summarize, log, or persist those values", combined)
-        self.assertIn("Never expose credentials or OAuth codes", combined)
+        self.assertIn("Never expose credentials, OAuth codes, or guest resume tokens", combined)
 
     def test_public_surface_rejects_supabase_admin_and_arbitrary_tools(self) -> None:
         skill = SKILL_PATH.read_text(encoding="utf-8")
         self.assertIn("Never connect to or expose the Supabase developer MCP", skill)
         self.assertIn("Do not use arbitrary HTTP, shell, database, bootstrap, operator, or admin tools", skill)
         self.assertIn("The fixed job allowlist is", skill)
-        helper_source = HELPER_PATH.read_text(encoding="utf-8")
+        helper_source = AUTH_HELPER_PATH.read_text(encoding="utf-8")
         for job_type in (
             "setup_project",
             "update_project_context",
@@ -146,6 +157,17 @@ class RepositoryContractTests(unittest.TestCase):
             with self.subTest(job_type=job_type):
                 self.assertIn(job_type, skill)
                 self.assertIn(f'\"{job_type}\"', helper_source)
+
+    def test_guest_helper_boundary_is_documented_without_claim_or_question_copy(self) -> None:
+        skill = SKILL_PATH.read_text(encoding="utf-8")
+        helper_source = GUEST_HELPER_PATH.read_text(encoding="utf-8")
+        self.assertIn("scripts/guest_questionnaire.py", skill)
+        self.assertIn("mode `0600` or stricter", skill)
+        self.assertIn("Try `resume` before `start`", skill)
+        self.assertIn("Never paste the resume token into an MCP argument", skill)
+        self.assertNotIn("claim_guest", helper_source)
+        self.assertNotIn('headers["Authorization"]', helper_source)
+        self.assertNotIn("What should I build", skill)
 
 
 if __name__ == "__main__":
