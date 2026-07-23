@@ -2,7 +2,7 @@
 
 Use this copy for the public directory page, GitHub repo summary, and launch post.
 
-Status: controlled-pilot draft only. Do not use as unrestricted public-launch copy until hosted readiness, credential activation, and the public-release review are complete.
+Status: MCP-first public setup draft. The legacy API helper remains controlled-pilot only.
 
 ## Directory identity
 
@@ -25,12 +25,12 @@ Social Agent public workflows
 ## One-line description
 
 ```text
-Controlled-pilot API workflows for onboarding, project updates, destination connection, and approval-gated social media operations.
+MCP-first workflows for authenticated onboarding, project updates, destination connection, and approval-gated social media operations.
 ```
 
 ## Longer description
 
-Social Agent public workflows gives compatible agents a controlled-pilot UX layer for hosted social media workflows.
+Social Agent public workflows gives user-owned agents an MCP-first UX layer for hosted social media workflows. Claude Code, Codex, OpenCode, and Hermes connect to the product-specific remote Social Agent MCP endpoint, while each client manages OAuth tokens outside chat.
 
 The skill teaches an agent how to:
 
@@ -41,7 +41,7 @@ The skill teaches an agent how to:
 - present approval batches before anything is scheduled
 - refuse unsupported platform or autopilot behavior unless the hosted API enables it
 
-The skill does **not** store state or questionnaire wording itself. It calls a hosted Social Agent Orchestrator API, which owns question text, options, questionnaire versions, answers, recurrence settings, usage caps, Social Connect proof, approval state, and scheduling intent records.
+The skill does **not** store state, credentials, OAuth codes, or questionnaire wording. It uses the hosted Social Agent MCP, whose service owns question text, options, questionnaire versions, answers, recurrence settings, usage caps, Social Connect proof, approval state, and scheduling intent records. It never exposes the Supabase developer MCP or arbitrary/admin tools.
 
 ## Best-fit topics
 
@@ -62,11 +62,8 @@ Use whichever tags the directory supports:
 ```text
 Claude Code
 Codex
-Cursor
-Windsurf
-GitHub Copilot
-Cline
-Goose
+OpenCode
+Hermes
 Generic Agent Skills
 ```
 
@@ -89,7 +86,7 @@ social-agent-public-workflows
 Description:
 
 ```text
-Use for controlled-pilot API-driven onboarding, project updates, destination connection, approvals, and recurrent-status checks.
+Use for MCP-first authenticated onboarding, project updates, destination connection, approvals, and recurrent-status checks.
 ```
 
 ### Install command
@@ -110,7 +107,7 @@ https://github.com/lniass/social-skills
 Turn an AI agent into a guided Social Agent operator.
 
 The skill keeps public workflows safe:
-- API-first state
+- MCP-first authenticated state
 - Facebook Pages first
 - database-backed questions only
 - approval before scheduling
@@ -128,7 +125,7 @@ social-agent-orchestrator = hosted API/control plane
 social-skills = public agent behavior wrapper
 ```
 
-That split makes the skill usable by multiple agent platforms without exposing database credentials, Social Connect credentials, or scheduling internals.
+That split makes the skill usable by multiple agent platforms without exposing database credentials, OAuth tokens or codes, Social Connect credentials, or scheduling internals. The controlled-pilot `sai_` helper remains a restricted fallback and is not used when MCP OAuth fails.
 
 ## Launch-readiness checklist for skills.sh
 
@@ -138,7 +135,9 @@ That split makes the skill usable by multiple agent platforms without exposing d
 - [x] README has `npx -y skills@1.5.19 add lniass/social-skills` install command.
 - [x] README explains source-of-truth boundary.
 - [x] Skill does not include secrets.
-- [x] Agent Skills CLI and complete-directory Hermes installations preserve the helper.
+- [x] Agent Skills CLI and complete-directory Hermes installations preserve the controlled-pilot helper.
+- [x] Claude Code, Codex, OpenCode, and Hermes MCP setup paths are documented.
+- [x] OAuth is client-managed outside chat and unauthenticated/re-authentication resume states are documented.
 - [x] Confirmed the repo appears on skills.sh.
 - [ ] Remove the controlled-pilot warning only after public activation and hosted readiness pass.
 - [ ] Optional: add repo topics on GitHub: `agent-skills`, `social-media`, `marketing-automation`, `ai-agents`, `facebook-pages`.

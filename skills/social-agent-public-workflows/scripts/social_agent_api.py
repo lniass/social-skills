@@ -46,6 +46,10 @@ SENSITIVE_FIELD_PARTS = (
     "activation_url",
     "connect_url",
     "oauth_url",
+    "oauth_code",
+    "authorization_code",
+    "callback_url",
+    "redirect_url",
 )
 JOB_TYPES = (
     "setup_project",

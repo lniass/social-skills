@@ -45,7 +45,9 @@ Reason: the public agent must handle onboarding, project updates, Facebook conne
 - [x] Add a dependency-light API helper for capabilities, project listing, job creation, and job-status reads.
 - [x] Read workspace credentials from environment or a protected file without exposing operator bootstrap.
 - [x] Add helper tests for authentication headers, request shape, HTTPS policy, file permissions, and redaction.
-- [ ] Replace controlled operator provisioning with an in-chat browser activation link after the pilot.
+- [x] Make the public user-owned-agent path MCP-first with client-managed OAuth outside chat.
+- [x] Document exact Claude Code, Codex, OpenCode, and Hermes remote MCP setup and re-authentication paths.
+- [x] Preserve the `sai_` helper only as a controlled-pilot fallback without weakening its job allowlist.
 - [ ] Add optional registry/tap metadata if a target platform requires it.
 
 ## Runtime loop
@@ -61,7 +63,7 @@ agent loads social-agent-public-workflows
 → API updates project state and returns next step
 ```
 
-Skills must not directly read or write Supabase/Postiz.
+Skills must not directly read or write Supabase/Postiz and must never expose the Supabase developer MCP. Public agents use only the product-specific Social Agent MCP; OAuth tokens remain in the MCP client outside chat.
 
 ## Recurrent posting source of truth
 
