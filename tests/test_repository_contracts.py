@@ -69,6 +69,16 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn("Controlled-pilot helper fallback", skill)
         self.assertIn("It is not a public OAuth fallback", skill)
 
+    def test_direct_facebook_request_cannot_bypass_guest_questionnaire(self) -> None:
+        skill = SKILL_PATH.read_text(encoding="utf-8")
+        self.assertIn('"connect my Facebook Page" is onboarding intent', skill)
+        self.assertIn("Before the hosted guest questionnaire is complete, never:", skill)
+        self.assertIn("Composio, Facebook, Meta, or other provider OAuth connection link", skill)
+        self.assertIn("invoke a Composio tool or any non-Social-Agent connector", skill)
+        self.assertIn("First run the restricted guest questionnaire helper", skill)
+        self.assertIn("only when the user asks to schedule", skill)
+        self.assertIn("Present its server-returned link as **Social Connect**, never as Composio", skill)
+
     def test_cross_runtime_commands_and_config_paths_are_documented(self) -> None:
         skill = SKILL_PATH.read_text(encoding="utf-8")
         setup = MCP_SETUP_PATH.read_text(encoding="utf-8")
