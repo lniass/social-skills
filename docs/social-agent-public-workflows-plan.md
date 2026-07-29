@@ -1,6 +1,6 @@
 # Social skills public workflow plan
 
-Status: scoped public-skill implementation plan. Current cross-repository priority and execution order are controlled by `social-agent-orchestrator/docs/plans/master-planning.md`. Current public onboarding is guest-first REST plus a future reviewed Handled verification-session handoff. MCP is future optional interoperability and is not part of current public onboarding.
+Status: scoped public-skill implementation plan. Current cross-repository priority and execution order are controlled by `social-agent-orchestrator/docs/plans/master-planning.md`. Current public onboarding is guest-first REST plus released Handled verification-session helper commands. Production browser E2E proof remains pending. MCP is future optional interoperability and is not part of public onboarding.
 
 ## Product decision
 
@@ -20,12 +20,12 @@ Facebook-first is a capability and posture inside this broad workflow.
 - [x] Database-backed questionnaire definitions and answer validation.
 - [x] Guest start, resume, answer, and atomic REST claim foundations.
 - [x] Project configuration, checklist routing, recurrence, approval, Social Connect proof, scheduling intent, and usage gates.
-- [ ] Create a short-lived Handled verification session bound server-side to the private guest draft.
-- [ ] Return only a narrow, one-time, model-displayable verification URL with no guest handle, OAuth artifact, user ID, workspace ID, or tenant selector.
-- [ ] Implement browser login, subscription purchase when required, provider-confirmed entitlement, and explicit approve or deny consent.
-- [ ] Have the trusted backend perform the idempotent REST claim after approval.
-- [ ] Expose bounded safe verification polling states and configured-project confirmation.
-- [ ] Trigger first-caption generation and status continuation after successful claim.
+- [x] Create a short-lived Handled verification session bound server-side to the private guest draft.
+- [x] Return only a narrow, one-time, model-displayable verification URL with no guest handle, OAuth artifact, user ID, workspace ID, or tenant selector.
+- [ ] Complete and verify browser login, subscription purchase when required, provider-confirmed entitlement, and explicit approve or deny consent.
+- [x] Have the trusted backend perform the idempotent REST claim after approval.
+- [x] Expose bounded safe verification polling states and configured-caption confirmation.
+- [x] Trigger first-caption generation and status continuation after successful claim.
 
 ### Social skills owns agent behavior
 
@@ -37,13 +37,13 @@ Facebook-first is a capability and posture inside this broad workflow.
 - [x] Remove chat `done` from Handled verification.
 - [x] Define the exact agent heading and message as **Verify your Handled account**.
 - [x] Keep MCP documentation only as future optional post-onboarding interoperability.
-- [x] Fail closed at questionnaire completion until secure verification creation and polling ship.
-- [ ] Add reviewed `verify` and `poll-verification` helper commands after backend endpoint contracts are implemented.
-- [ ] Validate the exact Handled HTTPS origin, approved path, expiry, and response shape before displaying a verification URL.
-- [ ] Store polling credentials privately and never print them.
-- [ ] Automatically poll without asking for `done`.
-- [ ] Delete private guest and verification state only after server-confirmed claim and configured-project proof.
-- [ ] Verify the complete Handled login, existing-subscription, new-subscription, delayed-entitlement, consent-denial, claim, and caption flow.
+- [x] Fail closed at questionnaire completion until secure verification creation and polling shipped.
+- [x] Add reviewed `verify` and `poll-verification` helper commands against the deployed backend contract.
+- [x] Validate the exact Handled HTTPS origin, approved path and fragment, expiry, and response shape before displaying a verification URL.
+- [x] Store polling capabilities privately and never print them.
+- [x] Define automatic bounded polling without asking for `done`.
+- [x] Delete private guest and verification state only after server-confirmed `caption_ready` proof.
+- [ ] Verify the complete Handled login, existing-subscription, new-subscription, delayed-entitlement, consent-denial, claim, and caption flow in production.
 
 ## Locked customer flow
 
@@ -88,7 +88,7 @@ The user does not say `done`. Payment alone does not grant agent access. Login, 
 
 ## Current release boundary
 
-The released helper supports only `start`, `resume`, `answer`, and `forget`. Until verification-session creation and polling are implemented and tested, the skill must stop after the guest questionnaire. This intentional stop prevents the old MCP onboarding path from being presented as current.
+The released helper supports `start`, `resume`, `answer`, `verify`, `poll-verification`, and `forget`. It can reach the first persisted caption through the trusted verification status contract. Public launch promotion remains blocked until the complete Handled browser flow is exercised in production, including entitlement pending, approval, denial, claim, generation, and terminal helper polling.
 
 ## Future optional MCP
 

@@ -6,7 +6,7 @@ The public Social Agent skill lets a new user complete the hosted questionnaire 
 
 MCP is not part of current public onboarding.
 
-## Planned approved order
+## Current approved order
 
 ```text
 guest helper starts or resumes the questionnaire
@@ -35,26 +35,23 @@ python3 scripts/guest_questionnaire.py start
 python3 scripts/guest_questionnaire.py answer \
   --step-key '<server-returned-step-key>' \
   --answer-json '<JSON object matching the server-returned schema>'
+python3 scripts/guest_questionnaire.py verify
+python3 scripts/guest_questionnaire.py poll-verification
 python3 scripts/guest_questionnaire.py forget
 ```
 
 - `resume` reads the private local handle and asks the fixed production API for current state.
 - `start` creates a guest draft only when no local state exists.
 - `answer` submits one answer for the exact current server-returned step.
+- `verify` creates or rotates one short-lived session, validates its exact Handled URL, and privately saves the polling capability.
+- `poll-verification` sends only that private capability and returns bounded safe status, timing, and terminal caption fields.
 - `forget` deletes local state only when the user explicitly discards the draft.
 
 The helper stores the opaque resume handle at `${XDG_STATE_HOME:-$HOME/.local/state}/social-agent/guest-questionnaire.json` by default. It never prints that handle.
 
-## Planned verification commands
+## Verification polling behavior
 
-The reviewed implementation will add:
-
-```bash
-python3 scripts/guest_questionnaire.py verify
-python3 scripts/guest_questionnaire.py poll-verification
-```
-
-These commands are not released yet. Until both the helper commands and hosted endpoints are deployed, stop after questionnaire completion. Do not use MCP, a separate pricing link, a user chat acknowledgement, direct Supabase access, or the controlled-pilot credential as a fallback.
+After `verify`, wait for its `retry_after_seconds` before calling `poll-verification`. Repeat automatically for `pending_login`, `pending_subscription`, `pending_entitlement_confirmation`, `pending_consent`, `claiming`, and `generating`. Do not ask the user for a chat acknowledgement. `caption_ready` returns the persisted caption and SHA-256 content hash, then clears private local state. `denied`, `expired`, and `failed` preserve the guest draft and stop safely. A later retry can run `verify` again without repeating the questionnaire.
 
 ## Verify your Handled account
 
@@ -89,7 +86,8 @@ The displayed URL must be:
 - HTTPS on the exact trusted Handled origin;
 - short-lived and one-time;
 - restricted to an approved verification path;
-- free of userinfo, fragments, and unapproved ports;
+- free of userinfo, query strings, and unapproved ports;
+- carrying exactly one bounded `gvd_` display capability in the URL fragment;
 - bounded in length;
 - free of guest resume tokens, polling credentials, OAuth tokens or codes, user IDs, workspace IDs, and tenant selectors.
 

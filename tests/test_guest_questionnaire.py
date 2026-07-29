@@ -9,6 +9,7 @@ import stat
 import tempfile
 import threading
 import unittest
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from collections.abc import Mapping
 from pathlib import Path
@@ -27,6 +28,39 @@ guest = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(guest)
 
 TEST_TOKEN = "gq_" + "a" * 43
+TEST_POLLING_TOKEN = "gvp_" + "b" * 43
+TEST_DISPLAY_TOKEN = "gvd_" + "c" * 43
+TEST_VERIFICATION_URL = f"https://handled.voicevine.ai/social-agent/verify#{TEST_DISPLAY_TOKEN}"
+TEST_CONTENT_HASH = "d" * 64
+
+
+def future_timestamp(minutes: int = 30) -> str:
+    return (datetime.now(timezone.utc) + timedelta(minutes=minutes)).isoformat()
+
+
+def verification_create_response() -> dict[str, object]:
+    return {
+        "api_version": "2026-07-01",
+        "request_id": "verification-create-1",
+        "status": "pending_login",
+        "verification_url": TEST_VERIFICATION_URL,
+        "polling_token": TEST_POLLING_TOKEN,
+        "expires_at": future_timestamp(),
+        "retry_after_seconds": 3,
+    }
+
+
+def verification_status_response(status: str = "pending_consent") -> dict[str, object]:
+    result: dict[str, object] = {
+        "api_version": "2026-07-01",
+        "request_id": "verification-status-1",
+        "status": status,
+        "expires_at": future_timestamp(),
+        "retry_after_seconds": None if status in guest.TERMINAL_VERIFICATION_STATUSES else 3,
+    }
+    if status == "caption_ready":
+        result.update({"caption": "First persisted caption", "content_hash": TEST_CONTENT_HASH})
+    return result
 
 
 def questionnaire_response(*, token: str | None = None, completed: bool = False) -> dict[str, object]:
@@ -60,9 +94,15 @@ def questionnaire_response(*, token: str | None = None, completed: bool = False)
     return result
 
 
+ResponseSpec = (
+    tuple[int, Mapping[str, object] | bytes]
+    | tuple[int, Mapping[str, object] | bytes, Mapping[str, str]]
+)
+
+
 class RecordingHandler(BaseHTTPRequestHandler):
     requests: list[dict[str, object]] = []
-    queued_responses: list[tuple[int, Mapping[str, object] | bytes]] = []
+    queued_responses: list[ResponseSpec] = []
 
     def _handle(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))
@@ -73,14 +113,19 @@ class RecordingHandler(BaseHTTPRequestHandler):
                 "path": self.path,
                 "authorization": self.headers.get("Authorization"),
                 "resume_token": self.headers.get("X-Guest-Resume-Token"),
+                "verification_token": self.headers.get("X-Guest-Verification-Token"),
                 "user_agent": self.headers.get("User-Agent"),
                 "body": json.loads(raw_body) if raw_body else None,
             }
         )
-        status, response = self.__class__.queued_responses.pop(0)
+        queued = self.__class__.queued_responses.pop(0)
+        status, response = queued[:2]
+        response_headers = queued[2] if len(queued) == 3 else {}
         encoded = response if isinstance(response, bytes) else json.dumps(response).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        for header, value in response_headers.items():
+            self.send_header(header, value)
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
         try:
@@ -96,7 +141,7 @@ class RecordingHandler(BaseHTTPRequestHandler):
 
 
 class LocalServer:
-    def __init__(self, *responses: tuple[int, Mapping[str, object] | bytes]) -> None:
+    def __init__(self, *responses: ResponseSpec) -> None:
         self.queued_responses = list(responses)
 
     def __enter__(self) -> str:
@@ -121,18 +166,25 @@ def environment(base_url: str, state_file: Path) -> dict[str, str]:
     }
 
 
-def write_state(path: Path, *, token: str = TEST_TOKEN, base_url: str) -> None:
-    path.write_text(
-        json.dumps(
-            {
-                "api_version": guest.API_VERSION,
-                "api_base_url": base_url,
-                "expires_at": "2026-07-24T12:00:00+00:00",
-                "resume_token": token,
-            }
-        ),
-        encoding="utf-8",
-    )
+def write_state(
+    path: Path,
+    *,
+    token: str = TEST_TOKEN,
+    base_url: str,
+    polling_token: str | None = None,
+) -> None:
+    state: dict[str, object] = {
+        "api_version": guest.API_VERSION,
+        "api_base_url": base_url,
+        "expires_at": "2026-07-24T12:00:00+00:00",
+        "resume_token": token,
+    }
+    if polling_token is not None:
+        state["verification"] = {
+            "polling_token": polling_token,
+            "expires_at": future_timestamp(),
+        }
+    path.write_text(json.dumps(state), encoding="utf-8")
     path.chmod(0o600)
 
 
@@ -141,7 +193,7 @@ class GuestQuestionnaireTests(unittest.TestCase):
         self.assertEqual(guest.DEFAULT_API_BASE_URL, "https://social-agent-api.voicevine.ai")
         parser = guest.build_parser()
         commands = parser._subparsers._group_actions[0].choices  # type: ignore[attr-defined]
-        self.assertEqual(set(commands), {"start", "resume", "answer", "forget"})
+        self.assertEqual(set(commands), {"start", "resume", "answer", "verify", "poll-verification", "forget"})
         self.assertNotIn("claim", commands)
 
     def test_start_saves_private_token_without_printing_it(self) -> None:
@@ -166,7 +218,7 @@ class GuestQuestionnaireTests(unittest.TestCase):
             self.assertEqual(request["path"], "/v1/guest/questionnaire")
             self.assertIsNone(request["authorization"])
             self.assertIsNone(request["resume_token"])
-            self.assertEqual(request["user_agent"], "social-agent-public-workflows-guest/0.5.0")
+            self.assertEqual(request["user_agent"], "social-agent-public-workflows-guest/0.6.0")
 
     def test_resume_reads_private_state_and_sends_only_guest_header(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -472,22 +524,202 @@ class GuestQuestionnaireTests(unittest.TestCase):
                 with self.assertRaisesRegex(guest.GuestQuestionnaireError, "no more than"):
                     guest._request_timeout(timeout)
 
-    def test_current_command_set_stops_before_verification(self) -> None:
-        parser = guest.build_parser()
-        command_action = next(action for action in parser._actions if getattr(action, "choices", None))
-        self.assertEqual(set(command_action.choices), {"start", "resume", "answer", "forget"})
+    def test_verify_displays_only_validated_url_and_saves_polling_capability_privately(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "guest.json"
+            with LocalServer((201, verification_create_response())) as base_url:
+                write_state(state_file, base_url=base_url)
+                with patch.dict(os.environ, environment(base_url, state_file), clear=True):
+                    stdout = io.StringIO()
+                    with contextlib.redirect_stdout(stdout):
+                        exit_code = guest.main(["verify"])
 
-    def test_current_output_redacts_unreleased_verification_fields(self) -> None:
-        safe = guest._safe_output(
-            {
-                "questionnaire": {
-                    "verification_url": "https://handled.voicevine.ai/social-agent/verify/unsafe",
-                    "verification_action": {"url": "https://handled.voicevine.ai/unsafe"},
-                }
-            }
+            self.assertEqual(exit_code, 0)
+            output = json.loads(stdout.getvalue())
+            self.assertEqual(output["verification_url"], TEST_VERIFICATION_URL)
+            self.assertTrue(output["verification_saved"])
+            self.assertNotIn(TEST_TOKEN, stdout.getvalue())
+            self.assertNotIn(TEST_POLLING_TOKEN, stdout.getvalue())
+            stored = json.loads(state_file.read_text(encoding="utf-8"))
+            self.assertEqual(stored["resume_token"], TEST_TOKEN)
+            self.assertEqual(stored["verification"]["polling_token"], TEST_POLLING_TOKEN)
+            self.assertEqual(stat.S_IMODE(state_file.stat().st_mode), 0o600)
+            request = RecordingHandler.requests[0]
+            self.assertEqual(request["method"], "POST")
+            self.assertEqual(request["path"], "/v1/guest/questionnaire/verification")
+            self.assertEqual(request["resume_token"], TEST_TOKEN)
+            self.assertIsNone(request["verification_token"])
+            self.assertIsNone(request["authorization"])
+
+    def test_verify_rejects_untrusted_or_malformed_urls_without_saving_polling_state(self) -> None:
+        unsafe_urls = (
+            f"http://handled.voicevine.ai/social-agent/verify#{TEST_DISPLAY_TOKEN}",
+            f"https://evil.example/social-agent/verify#{TEST_DISPLAY_TOKEN}",
+            f"https://handled.voicevine.ai/social-agent/verify?token=x#{TEST_DISPLAY_TOKEN}",
+            f"https://handled.voicevine.ai/other#{TEST_DISPLAY_TOKEN}",
+            "https://handled.voicevine.ai/social-agent/verify#short",
         )
-        self.assertEqual(safe["questionnaire"]["verification_url"], "[REDACTED]")
-        self.assertEqual(safe["questionnaire"]["verification_action"], "[REDACTED]")
+        for unsafe_url in unsafe_urls:
+            with self.subTest(url=unsafe_url), tempfile.TemporaryDirectory() as directory:
+                state_file = Path(directory) / "guest.json"
+                response = verification_create_response()
+                response["verification_url"] = unsafe_url
+                with LocalServer((201, response)) as base_url:
+                    write_state(state_file, base_url=base_url)
+                    with patch.dict(os.environ, environment(base_url, state_file), clear=True):
+                        with self.assertRaisesRegex(guest.GuestQuestionnaireError, "invalid Handled verification URL"):
+                            guest._verify(30)
+                self.assertNotIn("verification", json.loads(state_file.read_text(encoding="utf-8")))
+
+    def test_verify_rotates_private_polling_state_without_leaking_old_or_new_capability(self) -> None:
+        rotated = "gvp_" + "e" * 43
+        response = verification_create_response()
+        response["polling_token"] = rotated
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "guest.json"
+            with LocalServer((201, response)) as base_url:
+                write_state(state_file, base_url=base_url, polling_token=TEST_POLLING_TOKEN)
+                with patch.dict(os.environ, environment(base_url, state_file), clear=True):
+                    output = guest._verify(30)
+            serialized = json.dumps(output)
+            self.assertNotIn(TEST_POLLING_TOKEN, serialized)
+            self.assertNotIn(rotated, serialized)
+            stored = json.loads(state_file.read_text(encoding="utf-8"))
+            self.assertEqual(stored["verification"]["polling_token"], rotated)
+
+    def test_poll_uses_only_private_polling_header_and_preserves_pending_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "guest.json"
+            with LocalServer((200, verification_status_response())) as base_url:
+                write_state(state_file, base_url=base_url, polling_token=TEST_POLLING_TOKEN)
+                with patch.dict(os.environ, environment(base_url, state_file), clear=True):
+                    stdout = io.StringIO()
+                    with contextlib.redirect_stdout(stdout):
+                        exit_code = guest.main(["poll-verification"])
+
+            self.assertEqual(exit_code, 0)
+            output = json.loads(stdout.getvalue())
+            self.assertEqual(output["status"], "pending_consent")
+            self.assertEqual(output["retry_after_seconds"], 3)
+            self.assertTrue(state_file.exists())
+            self.assertNotIn(TEST_POLLING_TOKEN, stdout.getvalue())
+            request = RecordingHandler.requests[0]
+            self.assertEqual(request["method"], "GET")
+            self.assertEqual(request["path"], "/v1/guest/questionnaire/verification/status")
+            self.assertEqual(request["verification_token"], TEST_POLLING_TOKEN)
+            self.assertIsNone(request["resume_token"])
+            self.assertIsNone(request["authorization"])
+
+    def test_caption_ready_returns_persisted_caption_and_clears_private_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "guest.json"
+            with LocalServer((200, verification_status_response("caption_ready"))) as base_url:
+                write_state(state_file, base_url=base_url, polling_token=TEST_POLLING_TOKEN)
+                with patch.dict(os.environ, environment(base_url, state_file), clear=True):
+                    stdout = io.StringIO()
+                    with contextlib.redirect_stdout(stdout):
+                        exit_code = guest.main(["poll-verification"])
+
+            self.assertEqual(exit_code, 0)
+            result = json.loads(stdout.getvalue())
+            self.assertEqual(result["status"], "caption_ready")
+            self.assertEqual(result["caption"], "First persisted caption")
+            self.assertEqual(result["content_hash"], TEST_CONTENT_HASH)
+            self.assertFalse(state_file.exists())
+
+    def test_terminal_failure_preserves_guest_state_and_rejects_false_caption_proof(self) -> None:
+        for status in ("denied", "expired", "failed"):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+                state_file = Path(directory) / "guest.json"
+                with LocalServer((200, verification_status_response(status))) as base_url:
+                    write_state(state_file, base_url=base_url, polling_token=TEST_POLLING_TOKEN)
+                    with patch.dict(os.environ, environment(base_url, state_file), clear=True):
+                        result, cleanup_token = guest._poll_verification(30)
+                self.assertEqual(result["status"], status)
+                self.assertIsNone(cleanup_token)
+                self.assertTrue(state_file.exists())
+
+        invalid = verification_status_response("caption_ready")
+        invalid["content_hash"] = "not-a-hash"
+        with self.assertRaisesRegex(guest.GuestQuestionnaireError, "caption proof"):
+            guest._validate_verification_status_response(invalid)
+
+    def test_poll_requires_saved_verification_state_and_rejects_private_capability_in_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "guest.json"
+            with LocalServer() as base_url:
+                write_state(state_file, base_url=base_url)
+                with patch.dict(os.environ, environment(base_url, state_file), clear=True):
+                    with self.assertRaisesRegex(guest.GuestQuestionnaireError, "create one first"):
+                        guest._poll_verification(30)
+
+        safe = guest._safe_output({"message": TEST_POLLING_TOKEN})
+        self.assertEqual(safe["message"], "[REDACTED]")
+
+    def test_verify_rejects_secret_bearing_request_id_and_expired_session(self) -> None:
+        for mutation, error in (
+            ({"request_id": TEST_POLLING_TOKEN}, "request ID"),
+            ({"expires_at": "2020-01-01T00:00:00+00:00"}, "verification expiry"),
+        ):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                state_file = Path(directory) / "guest.json"
+                response = verification_create_response()
+                response.update(mutation)
+                with LocalServer((201, response)) as base_url:
+                    write_state(state_file, base_url=base_url)
+                    with patch.dict(os.environ, environment(base_url, state_file), clear=True):
+                        with self.assertRaisesRegex(guest.GuestQuestionnaireError, error):
+                            guest._verify(30)
+                self.assertNotIn("verification", json.loads(state_file.read_text(encoding="utf-8")))
+
+    def test_poll_exposes_bounded_retry_after_for_http_429(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "guest.json"
+            with LocalServer((429, {}, {"Retry-After": "7"})) as base_url:
+                write_state(state_file, base_url=base_url, polling_token=TEST_POLLING_TOKEN)
+                with patch.dict(os.environ, environment(base_url, state_file), clear=True):
+                    result, cleanup_token = guest._poll_verification(30)
+            self.assertEqual(
+                result,
+                {
+                    "api_version": guest.API_VERSION,
+                    "status": "rate_limited",
+                    "retry_after_seconds": 7,
+                },
+            )
+            self.assertIsNone(cleanup_token)
+            self.assertTrue(state_file.exists())
+
+    def test_caption_cleanup_compare_preserves_rotated_state(self) -> None:
+        rotated = "gvp_" + "e" * 43
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "guest.json"
+            with LocalServer() as base_url:
+                write_state(state_file, base_url=base_url, polling_token=rotated)
+                with patch.dict(os.environ, environment(base_url, state_file), clear=True):
+                    with self.assertRaisesRegex(guest.GuestQuestionnaireError, "newer private state was preserved"):
+                        guest._forget_state(expected_polling_token=TEST_POLLING_TOKEN)
+            stored = json.loads(state_file.read_text(encoding="utf-8"))
+            self.assertEqual(stored["verification"]["polling_token"], rotated)
+
+    def test_new_capability_formats_are_rejected_as_questionnaire_answers(self) -> None:
+        for value in (TEST_POLLING_TOKEN, TEST_DISPLAY_TOKEN):
+            with self.subTest(value=value[:4]):
+                self.assertTrue(guest._contains_sensitive_answer({"value": value}))
+
+    def test_pending_status_rejects_expired_timestamp(self) -> None:
+        response = verification_status_response("pending_consent")
+        response["expires_at"] = "2020-01-01T00:00:00+00:00"
+        with self.assertRaisesRegex(guest.GuestQuestionnaireError, "verification expiry"):
+            guest._validate_verification_status_response(response)
+
+    def test_terminal_status_rejects_retry_interval(self) -> None:
+        for status in ("caption_ready", "denied", "expired", "failed"):
+            with self.subTest(status=status):
+                response = verification_status_response(status)
+                response["retry_after_seconds"] = 3
+                with self.assertRaisesRegex(guest.GuestQuestionnaireError, "retry interval"):
+                    guest._validate_verification_status_response(response)
 
 
 if __name__ == "__main__":

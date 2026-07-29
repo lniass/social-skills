@@ -2,7 +2,7 @@
 
 Public Agent Skill for guest-first, server-owned Social Agent onboarding and approval-gated social media operations.
 
-A new user can currently complete the hosted questionnaire before login or payment. The bundled fixed-origin helper preserves an opaque guest handle in private local state and then stops. The selected but unreleased continuation is a short-lived Handled verification link, browser login, subscription when needed, provider-confirmed entitlement, explicit agent-access approval, private helper polling, and a trusted-backend REST claim.
+A new user can complete the hosted questionnaire before login or payment, open a validated short-lived Handled verification link, sign in or subscribe, explicitly approve agent access, and let the helper poll privately until the trusted backend returns the first persisted caption. Opaque guest and polling capabilities remain in private local state and never enter chat.
 
 **MCP is not part of current public onboarding.** Future optional MCP notes are isolated in [`docs/mcp-client-setup.md`](docs/mcp-client-setup.md).
 
@@ -17,23 +17,25 @@ Do not construct a Handled verification URL or replace it with a direct pricing 
 
 ## Current release status
 
-The guest questionnaire helper currently supports:
+The guest onboarding helper currently supports:
 
 ```text
 start
 resume
 answer
+verify
+poll-verification
 forget
 ```
 
-The reviewed secure verification-session creation and private polling commands are not released yet. The current public skill therefore stops safely after questionnaire completion. It does not fall back to MCP, ask the user to say `done`, use a controlled-pilot credential, or expose a guest handle.
+`verify` displays only an exact validated Handled URL and saves its separate polling capability privately. `poll-verification` exposes only safe status fields and the terminal persisted caption. It does not fall back to MCP, ask the user to say `done`, use a controlled-pilot credential, or expose a guest or polling capability.
 
 See:
 
 - [`docs/guest-questionnaire-flow.md`](docs/guest-questionnaire-flow.md)
 - [`docs/social-agent-public-workflows-plan.md`](docs/social-agent-public-workflows-plan.md)
 
-## Planned locked continuation flow
+## Current locked continuation flow
 
 ```text
 guest questionnaire completes
@@ -51,7 +53,7 @@ guest questionnaire completes
 
 Payment does not automatically authorize the agent. Once billing is confirmed, Handled advances to a separate consent action. The helper detects the final server result automatically. The user never pastes passwords, codes, callbacks, receipts, or tokens into chat.
 
-## Exact future agent message
+## Exact agent message
 
 > **Verify your Handled account**
 >
@@ -61,7 +63,7 @@ Payment does not automatically authorize the agent. Once billing is confirmed, H
 >
 > Complete the steps in Handled. I will detect approval automatically. Do not paste passwords, codes, callback links, or tokens here.
 
-The released helper must validate the exact Handled origin and approved verification path before this message is displayed.
+The helper validates the exact Handled origin, approved path, capability fragment, expiry, and response shape before this message is displayed.
 
 ## Architecture
 
@@ -111,6 +113,8 @@ python3 scripts/guest_questionnaire.py start
 python3 scripts/guest_questionnaire.py answer \
   --step-key '<server-returned-step-key>' \
   --answer-json '<JSON object matching the server-returned schema>'
+python3 scripts/guest_questionnaire.py verify
+python3 scripts/guest_questionnaire.py poll-verification
 python3 scripts/guest_questionnaire.py forget
 ```
 
@@ -120,15 +124,15 @@ The helper stores private state at `${XDG_STATE_HOME:-$HOME/.local/state}/social
 
 `scripts/social_agent_api.py` remains a restricted controlled-pilot helper for explicitly provisioned users. It is not a public Handled-verification fallback. Never ask for or print its credential, call operator bootstrap, or enable a custom origin in a customer runtime.
 
-## Current guarantees and future requirements
+## Current guarantees and remaining launch proof
 
 - Questions and options come only from the hosted database-backed workflow.
 - Workspace and user authority are server-derived.
-- The current guest handle remains outside model context.
-- Future polling credentials must remain outside model context.
-- A future displayed verification URL must contain no guest token, OAuth artifact, user ID, workspace ID, or tenant selector.
-- Future login or payment must never substitute for explicit access approval.
-- Future claim and continuation must be idempotent and server-confirmed.
+- Guest and polling capabilities remain outside model context.
+- The displayed verification URL contains only a one-time display capability, never a guest token, OAuth artifact, user ID, workspace ID, or tenant selector.
+- Login or payment never substitutes for explicit access approval.
+- Claim, continuation, and first-caption status are idempotent and server-confirmed.
 - Social Connect is required before scheduling to a destination.
 - Content and assets remain approval-gated.
 - Nothing publishes from a user chat assertion alone.
+- Full production browser E2E evidence remains required before public launch promotion.

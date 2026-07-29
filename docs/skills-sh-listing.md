@@ -1,8 +1,8 @@
 # skills.sh listing draft
 
-Use this copy only after the secure Handled verification-session and private polling flow is deployed and verified.
+Use this copy only after complete production Handled login, subscription, consent, claim, and first-caption E2E verification.
 
-Status: guest-first public setup draft. Current release stops after questionnaire completion. MCP is future optional interoperability, not public onboarding.
+Status: guest-first public listing draft. Verification helper and hosted endpoints are implemented; browser E2E launch evidence remains pending. MCP is future optional interoperability, not public onboarding.
 
 ## Directory identity
 
@@ -30,7 +30,7 @@ Guest-first onboarding with secure Handled account verification, private helper 
 
 ## Longer description
 
-Social Agent public workflows lets user-owned agents begin a server-owned questionnaire before login. A restricted helper preserves the opaque guest handle in private local state. After the questionnaire, the planned released helper creates a secure verification session and returns a short-lived Handled URL. The user logs in or subscribes and explicitly approves access in the browser. The helper polls privately while the backend verifies entitlement and claims the draft automatically.
+Social Agent public workflows lets user-owned agents begin a server-owned questionnaire before login. A restricted helper preserves the opaque guest handle in private local state. After the questionnaire, it creates a secure verification session and returns only a validated short-lived Handled URL. The user logs in or subscribes and explicitly approves access in the browser. The helper polls privately while the backend verifies entitlement, claims the draft, and creates the first persisted caption.
 
 The skill teaches an agent how to:
 
@@ -112,9 +112,9 @@ The controlled-pilot `sai_` helper is not a fallback for unavailable Handled ver
 - [x] Skill contains no questionnaire copy or secrets.
 - [x] Current onboarding no longer requires MCP or a user `done` message.
 - [x] Exact **Verify your Handled account** copy is documented.
-- [ ] Deploy secure verification-session creation and polling endpoints.
-- [ ] Add reviewed helper commands and URL validation.
+- [x] Deploy secure verification-session creation and polling endpoints.
+- [x] Add reviewed helper commands and exact URL validation.
+- [x] Remove the questionnaire-only release stop.
 - [ ] Verify existing-subscription and new-subscription browser paths.
 - [ ] Verify delayed entitlement confirmation and explicit consent.
 - [ ] Verify automatic claim, configured project, and first persisted caption.
-- [ ] Remove the current-release stop warning only after those checks pass.

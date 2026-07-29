@@ -2,9 +2,9 @@
 
 ## Release status
 
-This repository is in a controlled pilot. The secure Handled verification-session creation and private polling flow is not released yet. Current public onboarding stops after questionnaire completion.
+This repository remains in a controlled pilot. Secure Handled verification-session creation and private polling are released in the helper. Public launch promotion still requires complete production login, subscription, consent, claim, and first-caption E2E evidence.
 
-Do not place production credentials, guest handles, polling credentials, browser sessions, receipts, callback links, or verification URLs in issues, discussions, pull requests, exported transcripts, telemetry, reports, or examples. A later released short-lived verification URL is intentionally displayable only in the user's active private conversation.
+Do not place production credentials, guest handles, polling credentials, browser sessions, receipts, callback links, or verification URLs in issues, discussions, pull requests, exported transcripts, telemetry, reports, or examples. A validated short-lived verification URL is intentionally displayable only in the user's active private conversation.
 
 ## Reporting a vulnerability
 
@@ -20,7 +20,7 @@ Include:
 
 ## Public onboarding boundary
 
-The public guest helper stores an opaque guest resume handle in a current-user-owned private state file. The planned verification helper will also store an opaque polling credential privately. Neither value may enter model context, chat, URLs, CLI arguments, logs, telemetry, or examples.
+The public helper stores an opaque guest resume handle and separate opaque polling capability in a current-user-owned private state file. Neither value may enter model context, chat, URLs, CLI arguments, logs, telemetry, or examples.
 
 Browser login and authorization artifacts remain between Handled, Supabase, and the hosted backend. The helper must never receive passwords, cookies, OAuth codes, access tokens, refresh tokens, or Supabase session data.
 

@@ -1,7 +1,7 @@
 ---
 name: social-agent-public-workflows
-description: Run the current server-owned guest questionnaire safely and stop at completion until the planned secure Handled account-verification handoff is released.
-version: 0.5.0
+description: Run server-owned guest onboarding through secure Handled verification, private polling, and first persisted caption continuation.
+version: 0.6.0
 author: SimpleTechX / VoiceVine
 license: MIT
 metadata:
@@ -20,7 +20,7 @@ metadata:
 
 # Social Agent public workflows
 
-Use this skill for guest-first Social Agent onboarding and later approval-gated social media work. The current public release supports only the questionnaire through the bundled fixed-origin REST helper. Its planned continuation is a server-returned Handled verification action. MCP is not part of current public onboarding.
+Use this skill for guest-first Social Agent onboarding and later approval-gated social media work. Current public onboarding uses the bundled fixed-origin REST helper for the database-backed questionnaire, secure Handled verification-session creation, private status polling, and first persisted caption continuation. MCP is not part of public onboarding.
 
 ## Core rule
 
@@ -56,7 +56,7 @@ Never connect to or expose the Supabase developer MCP. Never call Supabase, Soci
 
 ## Verify your Handled account
 
-**Planned behavior only. Do not execute this section with the current helper.** The current release boundary below overrides any response field, URL, or `next_action` that appears to offer verification. After a later released helper validates and returns a supported verification action, send exactly this message with the validated URL in place of the placeholder:
+After `verify` returns a validated verification action, send exactly this message with its `verification_url` in place of the placeholder:
 
 > **Verify your Handled account**
 >
@@ -77,9 +77,11 @@ Rules:
 7. The trusted backend performs the idempotent REST claim only after verified identity, entitlement, and approval.
 8. Continue automatically only after the helper reports a server-confirmed configured project. Preserve private guest state on denial, expiry, malformed proof, or failure.
 
-## Current release boundary
+## Released verification behavior
 
-The distributed helper currently supports guest `start`, `resume`, `answer`, and `forget`. Stop unconditionally after questionnaire completion. Ignore and do not display any verification-like response field or URL. Until the reviewed verification-session creation and private polling commands plus their backend endpoints are deployed, say that secure Handled account verification is not yet available. Do not fall back to MCP, a pricing link, a user `done` message, a static credential, direct Supabase access, or a model-visible claim token.
+The helper supports `verify` and `poll-verification`. Run `verify` only after the hosted questionnaire reports `completed`. It safely creates or rotates one short-lived session, stores the private polling capability, and returns only the validated Handled URL plus safe timing/status fields. After displaying that URL, invoke `poll-verification` after `retry_after_seconds`. While status is pending, wait for the newly returned interval and poll again automatically. Do not ask the user to say `done`.
+
+Only `caption_ready` proves trusted claim, configured project creation, and persisted first-caption generation. The helper returns that caption and content hash, then clears private guest and polling state. `denied`, `expired`, or `failed` are terminal stops and preserve the guest draft. A later retry intent may run `verify` again to rotate the verification session without repeating the questionnaire. Do not fall back to MCP, a pricing link, a static credential, direct Supabase access, or a model-visible claim token.
 
 ## Guest-first runtime flow
 
@@ -88,7 +90,7 @@ agent loads this skill
 → restricted helper starts or resumes an unauthenticated guest draft
 → agent displays one server-returned question and submits one answer at a time
 → server completes the draft
-→ helper creates a short-lived Handled verification session when that release is available
+→ helper creates a short-lived Handled verification session
 → agent displays the exact Verify your Handled account message
 → user logs in or subscribes in Handled
 → backend confirms entitlement
@@ -109,7 +111,7 @@ guest helper start or resume returns the current database-backed question
 → guest helper answer stores the answer in temporary unowned server state
 → repeat until hosted state says complete
 → preserve private local resume state
-→ secure Handled verification and private polling occur when deployed
+→ secure Handled verification and private polling run through the released helper
 → trusted backend claim materializes the configured project
 → follow hosted state through first-caption generation, approval, connection, and scheduling
 ```
@@ -123,14 +125,14 @@ Do not embed, reconstruct, reorder, or supplement questionnaire wording in this 
 3. Submit the user's exact selection or detail object with `answer`, using the current server-returned step key and field keys.
 4. Continue one question at a time until hosted state says the guest draft is complete.
 5. Preserve private state. Do not run `forget`.
-6. If the released helper returns a validated Handled verification action, use the exact **Verify your Handled account** message above and begin private polling.
-7. If that action or private polling support is absent, stop at the current release boundary. Do not use MCP or ask the user to say `done`.
-8. After server-confirmed claim and configured-project proof, request the first caption through the hosted workflow and display the exact persisted caption and version.
+6. Run `verify`, display the exact **Verify your Handled account** message with its validated URL, and wait its returned retry interval.
+7. Run `poll-verification` automatically at each returned interval. Continue polling through pending states without asking for `done`. Stop and preserve state on `denied`, `expired`, `failed`, malformed proof, or service failure.
+8. On `caption_ready`, display the exact persisted caption and version hash returned by the helper. Private guest and polling state is then cleared.
 9. Offer Social Connect only after the caption is shown and only when the user wants to schedule.
 
 ## Allowed product workflow surface
 
-After secure authenticated continuation is deployed, use only Social Agent product operations that provide:
+After server-confirmed Handled verification, use only Social Agent product operations that provide:
 
 - capabilities
 - project listing and hosted project context
@@ -205,7 +207,7 @@ ${XDG_STATE_HOME:-$HOME/.local/state}/social-agent/guest-questionnaire.json
 
 The state directory is private and the state file must be owned by the runtime user with mode `0600` or stricter. Never read, print, summarize, upload, attach, or ask the user to paste this file or its token.
 
-Use only these currently released commands from the installed skill directory:
+Use only these released commands from the installed skill directory:
 
 ```bash
 python3 scripts/guest_questionnaire.py resume
@@ -213,10 +215,12 @@ python3 scripts/guest_questionnaire.py start
 python3 scripts/guest_questionnaire.py answer \
   --step-key '<server-returned-step-key>' \
   --answer-json '<JSON object matching the server-returned schema>'
+python3 scripts/guest_questionnaire.py verify
+python3 scripts/guest_questionnaire.py poll-verification
 python3 scripts/guest_questionnaire.py forget
 ```
 
-Try `resume` before `start`. `start` refuses to overwrite saved progress. Use `forget` only when the user explicitly discards the draft. Do not set `SOCIAL_AGENT_ALLOW_CUSTOM_API_BASE_URL` in a customer runtime.
+Try `resume` before `start`. `start` refuses to overwrite saved progress. After completion, `verify` creates or rotates the session and `poll-verification` reads only its privately stored polling capability. Respect each returned `retry_after_seconds`; an HTTP 429 means wait before polling again. Use `forget` only when the user explicitly discards the draft. Do not set `SOCIAL_AGENT_ALLOW_CUSTOM_API_BASE_URL` in a customer runtime.
 
 ## Controlled-pilot helper
 

@@ -66,9 +66,11 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn("separate explicit approve or deny action", skill)
         self.assertIn("I will detect approval automatically", skill)
         self.assertIn("MCP is not part of current public onboarding", skill)
-        self.assertIn("Stop unconditionally after questionnaire completion", skill)
-        self.assertIn("Ignore and do not display any verification-like response field or URL", skill)
-        self.assertIn("Planned behavior only. Do not execute this section with the current helper", skill)
+        self.assertIn("The helper supports `verify` and `poll-verification`", skill)
+        self.assertIn("Only `caption_ready` proves trusted claim", skill)
+        self.assertIn("poll again automatically", skill)
+        self.assertNotIn("Stop unconditionally after questionnaire completion", skill)
+        self.assertNotIn("Planned behavior only", skill)
         self.assertNotIn("https://handled.voicevine.ai/pricing", skill)
 
     def test_direct_facebook_request_cannot_bypass_guest_questionnaire(self) -> None:
