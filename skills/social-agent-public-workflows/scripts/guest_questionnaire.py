@@ -2,9 +2,10 @@
 """Restricted guest-questionnaire client for Social Agent.
 
 The helper talks only to the fixed Social Agent API origin, stores the opaque
-resume token in a private local state file, and never prints that token. It is
-for the unauthenticated questionnaire only. OAuth and draft claim remain owned
-by the configured Social Agent MCP client and hosted service.
+resume token in a private local state file, and never prints that token. The
+current release is for the unauthenticated questionnaire only and stops before
+Handled verification or claim. Those operations require a later reviewed
+helper and hosted-service release.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 API_VERSION = "2026-07-01"
-SKILL_VERSION = "0.4.0"
+SKILL_VERSION = "0.5.0"
 DEFAULT_API_BASE_URL = "https://social-agent-api.voicevine.ai"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 MAX_TIMEOUT_SECONDS = 120.0
@@ -38,6 +39,7 @@ CREDENTIAL_PATTERN = re.compile(r"sai_[A-Za-z0-9_.-]+")
 CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
 SENSITIVE_FIELD_PARTS = (
     "authorization",
+    "verification",
     "password",
     "secret",
     "token",
@@ -478,7 +480,7 @@ def build_parser() -> argparse.ArgumentParser:
     answer = subparsers.add_parser("answer", help="submit an answer for the current server-returned step")
     answer.add_argument("--step-key", required=True)
     answer.add_argument("--answer-json", type=_json_value, required=True)
-    subparsers.add_parser("forget", help="remove the local resume state after a successful authenticated claim")
+    subparsers.add_parser("forget", help="discard the local resume state only when explicitly requested")
     return parser
 
 

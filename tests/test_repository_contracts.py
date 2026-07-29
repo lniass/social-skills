@@ -57,17 +57,19 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertTrue(AUTH_HELPER_PATH.is_file())
         self.assertTrue(GUEST_HELPER_PATH.is_file())
 
-    def test_public_skill_is_guest_first_then_uses_client_managed_oauth(self) -> None:
+    def test_public_skill_uses_handled_verification_without_mcp_onboarding(self) -> None:
         skill = SKILL_PATH.read_text(encoding="utf-8")
         self.assertIn("start with the bundled restricted guest helper", skill)
-        self.assertIn("Guest-first runtime flow", skill)
-        self.assertIn("MCP client, not the conversation, performs OAuth", skill)
-        self.assertIn("OAuth happens in the MCP client outside chat", skill)
-        self.assertIn("https://social-agent-api.voicevine.ai/mcp", skill)
-        self.assertIn("https://handled.voicevine.ai/pricing", skill)
-        self.assertIn("It is never proof of login, payment, subscription, or entitlement", skill)
-        self.assertIn("Controlled-pilot helper fallback", skill)
-        self.assertIn("It is not a public OAuth fallback", skill)
+        self.assertIn("## Verify your Handled account", skill)
+        self.assertIn("subscribe if needed", skill)
+        self.assertIn("provider-confirmed entitlement", skill)
+        self.assertIn("separate explicit approve or deny action", skill)
+        self.assertIn("I will detect approval automatically", skill)
+        self.assertIn("MCP is not part of current public onboarding", skill)
+        self.assertIn("Stop unconditionally after questionnaire completion", skill)
+        self.assertIn("Ignore and do not display any verification-like response field or URL", skill)
+        self.assertIn("Planned behavior only. Do not execute this section with the current helper", skill)
+        self.assertNotIn("https://handled.voicevine.ai/pricing", skill)
 
     def test_direct_facebook_request_cannot_bypass_guest_questionnaire(self) -> None:
         skill = SKILL_PATH.read_text(encoding="utf-8")
@@ -77,43 +79,39 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn("invoke a Composio tool or any non-Social-Agent connector", skill)
         self.assertIn("First run the restricted guest questionnaire helper", skill)
         self.assertIn("only when the user asks to schedule", skill)
-        self.assertIn("Present its server-returned link as **Social Connect**, never as Composio", skill)
+        self.assertIn("Present the server-returned destination link as **Social Connect**, never as Composio", skill)
 
-    def test_cross_runtime_commands_and_config_paths_are_documented(self) -> None:
+    def test_mcp_commands_are_future_only_and_absent_from_active_skill(self) -> None:
         skill = SKILL_PATH.read_text(encoding="utf-8")
         setup = MCP_SETUP_PATH.read_text(encoding="utf-8")
         required = (
             "claude mcp add --transport http --scope user social-agent",
-            "~/.claude.json",
             "codex mcp add social-agent --url",
             "codex mcp login social-agent",
-            "~/.codex/config.toml",
-            '\"type\": \"remote\"',
             "opencode mcp auth social-agent",
-            "~/.config/opencode/opencode.json",
             "hermes mcp add social-agent --url",
             "hermes mcp test social-agent",
-            "~/.hermes/config.yaml",
         )
         for value in required:
             with self.subTest(value=value):
-                self.assertIn(value, skill)
                 self.assertIn(value, setup)
+                self.assertNotIn(value, skill)
+        self.assertIn("Future optional Social Agent MCP setup", setup)
+        self.assertIn("Do not ask a public onboarding user to configure or authenticate MCP", setup)
 
-    def test_auth_states_resume_and_reauth_are_explicit(self) -> None:
-        combined = "\n".join(
-            (
-                SKILL_PATH.read_text(encoding="utf-8"),
-                MCP_SETUP_PATH.read_text(encoding="utf-8"),
-            )
-        )
+    def test_handled_verification_states_and_auto_resume_are_explicit(self) -> None:
+        combined = "\n".join(path.read_text(encoding="utf-8") for path in (
+            SKILL_PATH,
+            ROOT / "docs" / "guest-questionnaire-flow.md",
+            ROOT / "docs" / "social-agent-public-workflows-plan.md",
+        ))
         for value in (
-            "Unauthenticated",
-            "Expired, revoked, or wrong account",
-            "After authentication",
-            "re-authentication",
-            "Read capabilities and current hosted",
-            "Do not replay a mutating tool call",
+            "Verify your Handled account",
+            "provider-confirmed entitlement",
+            "explicit approve or deny",
+            "polls privately",
+            "does not return to chat to say `done`",
+            "configured-project proof",
         ):
             with self.subTest(value=value):
                 self.assertIn(value, combined)
@@ -139,14 +137,14 @@ class RepositoryContractTests(unittest.TestCase):
         for value in forbidden:
             with self.subTest(value=value):
                 self.assertNotIn(value, combined)
-        self.assertIn("Never print, repeat, summarize, log, or persist those values", combined)
-        self.assertIn("Never expose credentials, OAuth codes, or guest resume tokens", combined)
+        self.assertIn("Do not paste passwords, codes, callback links, or tokens here", combined)
+        self.assertIn("guest resume token or verification polling credential", combined)
 
     def test_public_surface_rejects_supabase_admin_and_arbitrary_tools(self) -> None:
         skill = SKILL_PATH.read_text(encoding="utf-8")
         self.assertIn("Never connect to or expose the Supabase developer MCP", skill)
         self.assertIn("Do not use arbitrary HTTP, shell, database, bootstrap, operator, or admin tools", skill)
-        self.assertIn("The fixed job allowlist is", skill)
+        self.assertIn("The fixed controlled product job allowlist is", skill)
         helper_source = AUTH_HELPER_PATH.read_text(encoding="utf-8")
         for job_type in (
             "setup_project",
@@ -174,7 +172,7 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn("scripts/guest_questionnaire.py", skill)
         self.assertIn("mode `0600` or stricter", skill)
         self.assertIn("Try `resume` before `start`", skill)
-        self.assertIn("Never paste the resume token into an MCP argument", skill)
+        self.assertIn("Never paste a guest resume token or verification polling credential into a tool argument", skill)
         self.assertNotIn("claim_guest", helper_source)
         self.assertNotIn('headers["Authorization"]', helper_source)
         self.assertNotIn("What should I build", skill)

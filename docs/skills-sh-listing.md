@@ -1,8 +1,8 @@
 # skills.sh listing draft
 
-Use this copy for the public directory page, GitHub repo summary, and launch post.
+Use this copy only after the secure Handled verification-session and private polling flow is deployed and verified.
 
-Status: guest-first public setup draft. Authenticated continuation uses MCP; the legacy API helper remains controlled-pilot only.
+Status: guest-first public setup draft. Current release stops after questionnaire completion. MCP is future optional interoperability, not public onboarding.
 
 ## Directory identity
 
@@ -25,25 +25,26 @@ Social Agent public workflows
 ## One-line description
 
 ```text
-Guest-first onboarding followed by authenticated MCP workflows for project updates, destination connection, and approval-gated social media operations.
+Guest-first onboarding with secure Handled account verification, private helper polling, and approval-gated social media workflows.
 ```
 
 ## Longer description
 
-Social Agent public workflows lets user-owned agents begin a server-owned questionnaire before login. A restricted helper preserves the opaque resume token in a private local file. After the hosted conversion step, Claude Code, Codex, OpenCode, and Hermes connect to the product-specific remote Social Agent MCP endpoint, while each client manages OAuth tokens outside chat.
+Social Agent public workflows lets user-owned agents begin a server-owned questionnaire before login. A restricted helper preserves the opaque guest handle in private local state. After the questionnaire, the planned released helper creates a secure verification session and returns a short-lived Handled URL. The user logs in or subscribes and explicitly approves access in the browser. The helper polls privately while the backend verifies entitlement and claims the draft automatically.
 
 The skill teaches an agent how to:
 
-- retrieve database-backed guest onboarding and authenticated update questions one at a time
-- update audience, positioning, CTA, cadence, and pause intent
-- guide Facebook Page connection through Social Connect
-- inspect hosted recurrence status without inventing local configuration questions
+- retrieve database-backed onboarding and update questions one at a time
+- preserve private acquisition state outside chat
+- display the exact **Verify your Handled account** action
+- avoid treating login or payment as agent authorization
+- guide Facebook Page connection through Social Connect after project setup
 - present approval batches before anything is scheduled
 - refuse unsupported platform or autopilot behavior unless the hosted API enables it
 
-The skill stores only an opaque guest resume token in a private local state file. It does **not** store OAuth credentials, authentication codes, or questionnaire wording. The hosted Social Agent service owns question text, options, questionnaire versions, answers, recurrence settings, usage caps, Social Connect proof, approval state, and scheduling intent records. It never exposes the Supabase developer MCP or arbitrary/admin tools.
+The hosted Social Agent service owns question text, options, versions, answers, entitlement, claim, recurrence, usage caps, Social Connect proof, approval state, and scheduling intent. The skill never exposes guest handles, polling credentials, OAuth artifacts, the Supabase developer MCP, or arbitrary admin tools.
 
-## Best-fit topics
+## Topics
 
 ```text
 Marketing
@@ -55,9 +56,7 @@ Facebook Pages
 Approval Workflows
 ```
 
-## Best-fit agent tags
-
-Use whichever tags the directory supports:
+## Agent tags
 
 ```text
 Claude Code
@@ -67,15 +66,7 @@ Hermes
 Generic Agent Skills
 ```
 
-## What should appear on the directory page
-
-### Skills count
-
-```text
-1 skill
-```
-
-### Skill card
+## Skill card
 
 Name:
 
@@ -86,59 +77,44 @@ social-agent-public-workflows
 Description:
 
 ```text
-Use for guest-first onboarding, authenticated project workflows, destination connection, approvals, and recurrent-status checks.
+Use for guest-first onboarding, secure Handled verification, hosted project workflows, destination connection, approvals, and recurrent-status checks.
 ```
 
-### Install command
-
-```bash
-npx -y skills@1.5.19 add lniass/social-skills
-```
-
-### GitHub link
-
-```text
-https://github.com/lniass/social-skills
-```
-
-## Screenshot/preview copy
+## Screenshot copy
 
 ```text
 Turn an AI agent into a guided Social Agent operator.
 
 The skill keeps public workflows safe:
 - guest-first questionnaire with private resume state
-- client-managed MCP authentication after conversion
+- server-returned Handled verification URL and private polling
+- explicit access approval after entitlement confirmation
 - Facebook Pages first
 - database-backed questions only
 - approval before scheduling
-- no direct Supabase/Postiz access from the agent
+- no direct Supabase or Postiz access from the agent
 ```
 
-## Why this is listed as a skill repo, not a standalone app
-
-`social-skills` is the installable agent behavior layer. It is intentionally small and portable.
-
-The private backend remains separate:
+## Repository boundary
 
 ```text
-social-agent-orchestrator = hosted API/control plane
+social-agent-orchestrator = hosted API and control plane
 social-skills = public agent behavior wrapper
 ```
 
-That split makes the skill usable by multiple agent platforms without exposing database credentials, OAuth tokens or codes, Social Connect credentials, or scheduling internals. The controlled-pilot `sai_` helper remains a restricted fallback and is not used when MCP OAuth fails.
+The controlled-pilot `sai_` helper is not a fallback for unavailable Handled verification. Remote MCP remains future optional post-onboarding interoperability.
 
-## Launch-readiness checklist for skills.sh
+## Launch-readiness checklist
 
-- [x] Public GitHub repo exists: `lniass/social-skills`.
-- [x] Skill folder exists under `skills/social-agent-public-workflows/`.
-- [x] `SKILL.md` has name and description frontmatter.
-- [x] README has `npx -y skills@1.5.19 add lniass/social-skills` install command.
-- [x] README explains source-of-truth boundary.
-- [x] Skill does not include secrets.
-- [x] Agent Skills CLI and complete-directory Hermes installations preserve the controlled-pilot helper.
-- [x] Claude Code, Codex, OpenCode, and Hermes MCP setup paths are documented.
-- [x] OAuth is client-managed outside chat and unauthenticated/re-authentication resume states are documented.
-- [x] Confirmed the repo appears on skills.sh.
-- [ ] Remove the controlled-pilot warning only after public activation and hosted readiness pass.
-- [ ] Optional: add repo topics on GitHub: `agent-skills`, `social-media`, `marketing-automation`, `ai-agents`, `facebook-pages`.
+- [x] Public GitHub repository exists.
+- [x] Installable skill folder exists.
+- [x] README includes the Agent Skills install command.
+- [x] Skill contains no questionnaire copy or secrets.
+- [x] Current onboarding no longer requires MCP or a user `done` message.
+- [x] Exact **Verify your Handled account** copy is documented.
+- [ ] Deploy secure verification-session creation and polling endpoints.
+- [ ] Add reviewed helper commands and URL validation.
+- [ ] Verify existing-subscription and new-subscription browser paths.
+- [ ] Verify delayed entitlement confirmation and explicit consent.
+- [ ] Verify automatic claim, configured project, and first persisted caption.
+- [ ] Remove the current-release stop warning only after those checks pass.

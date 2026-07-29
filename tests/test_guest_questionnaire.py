@@ -166,7 +166,7 @@ class GuestQuestionnaireTests(unittest.TestCase):
             self.assertEqual(request["path"], "/v1/guest/questionnaire")
             self.assertIsNone(request["authorization"])
             self.assertIsNone(request["resume_token"])
-            self.assertEqual(request["user_agent"], "social-agent-public-workflows-guest/0.4.0")
+            self.assertEqual(request["user_agent"], "social-agent-public-workflows-guest/0.5.0")
 
     def test_resume_reads_private_state_and_sends_only_guest_header(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -471,6 +471,23 @@ class GuestQuestionnaireTests(unittest.TestCase):
             with self.subTest(timeout=timeout):
                 with self.assertRaisesRegex(guest.GuestQuestionnaireError, "no more than"):
                     guest._request_timeout(timeout)
+
+    def test_current_command_set_stops_before_verification(self) -> None:
+        parser = guest.build_parser()
+        command_action = next(action for action in parser._actions if getattr(action, "choices", None))
+        self.assertEqual(set(command_action.choices), {"start", "resume", "answer", "forget"})
+
+    def test_current_output_redacts_unreleased_verification_fields(self) -> None:
+        safe = guest._safe_output(
+            {
+                "questionnaire": {
+                    "verification_url": "https://handled.voicevine.ai/social-agent/verify/unsafe",
+                    "verification_action": {"url": "https://handled.voicevine.ai/unsafe"},
+                }
+            }
+        )
+        self.assertEqual(safe["questionnaire"]["verification_url"], "[REDACTED]")
+        self.assertEqual(safe["questionnaire"]["verification_action"], "[REDACTED]")
 
 
 if __name__ == "__main__":
