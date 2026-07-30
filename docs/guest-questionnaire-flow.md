@@ -22,12 +22,18 @@ guest helper starts or resumes the questionnaire
 → helper polls privately
 → trusted backend atomically claims the guest draft
 → helper confirms the configured project
-→ hosted service generates the first persisted caption
+→ user explicitly requests a post for today or another day
+→ hosted service generates persisted post copy
 ```
 
 The agent must not ask the user to say `done`. Verification progresses through private helper polling and trusted server state only.
 
 ## Current helper commands
+
+The helpers expose two narrow workflow boundaries:
+
+- `guest_questionnaire.py` owns questionnaire progress, Handled verification, and the transition to `project_ready`.
+- `post_workflows.py` owns explicit post requests. Future post formats belong here; scheduling and recurrence remain separate workflow concerns.
 
 ```bash
 python3 scripts/guest_questionnaire.py resume
@@ -37,6 +43,7 @@ python3 scripts/guest_questionnaire.py answer \
   --answer-json '<JSON object matching the server-returned schema>'
 python3 scripts/guest_questionnaire.py verify
 python3 scripts/guest_questionnaire.py poll-verification
+python3 scripts/post_workflows.py create-post --confirm-user-request
 python3 scripts/guest_questionnaire.py forget
 ```
 
@@ -45,13 +52,14 @@ python3 scripts/guest_questionnaire.py forget
 - `answer` submits one answer for the exact current server-returned step.
 - `verify` creates a short-lived session when needed, reuses the same safely unexpired Handled URL on repeated calls, and privately saves its URL and polling capability.
 - `poll-verification` sends only that private capability and returns bounded safe status, timing, and terminal caption fields.
+- `create-post --confirm-user-request` is allowed only after `project_ready` and an explicit user post request; retries create at most one post-generation job.
 - `forget` deletes local state only when the user explicitly discards the draft.
 
 The helper stores the opaque resume handle at `${XDG_STATE_HOME:-$HOME/.local/state}/social-agent/guest-questionnaire.json` by default. It never prints that handle.
 
 ## Verification polling behavior
 
-After `verify`, wait for its `retry_after_seconds` before calling `poll-verification`. Repeat automatically for `pending_login`, `pending_subscription`, `pending_entitlement_confirmation`, `pending_consent`, `claiming`, and `generating`. Do not ask the user for a chat acknowledgement. Re-running `verify` reuses the same safely unexpired URL instead of invalidating the link already displayed. `caption_ready` returns the persisted caption and SHA-256 content hash, then clears private local state. `denied`, `expired`, and `failed` clear only the terminal verification state, preserve the guest draft, and stop safely. A later retry can run `verify` again without repeating the questionnaire.
+After `verify`, wait for its `retry_after_seconds` before calling `poll-verification`. Repeat automatically for `pending_login`, `pending_subscription`, `pending_entitlement_confirmation`, `pending_consent`, and `claiming`. On `project_ready`, say **Your project is ready. Tell me when you want a Facebook post, for example: “Create a post for today.”** Run `create-post --confirm-user-request` only after an explicit post request, then poll through `generating`. `caption_ready` returns the persisted caption and SHA-256 content hash, then clears private local state. `denied`, `expired`, and `failed` clear only the terminal verification state, preserve the guest draft, and stop safely. A later retry can run `verify` again without repeating the questionnaire.
 
 ## Verify your Handled account
 

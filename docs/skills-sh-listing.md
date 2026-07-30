@@ -1,6 +1,6 @@
 # skills.sh listing draft
 
-Use this copy only after complete production Handled login, subscription, consent, claim, and first-caption E2E verification.
+Use this copy only after complete production Handled login, subscription, consent, claim, project readiness, and explicit post-creation E2E verification.
 
 Status: guest-first public listing draft. Verification helper and hosted endpoints are implemented; browser E2E launch evidence remains pending. MCP is future optional interoperability, not public onboarding.
 
@@ -30,7 +30,7 @@ Guest-first onboarding with secure Handled account verification, private helper 
 
 ## Longer description
 
-Social Agent public workflows lets user-owned agents begin a server-owned questionnaire before login. A restricted helper preserves the opaque guest handle in private local state. After the questionnaire, it creates a secure verification session and returns only a validated short-lived Handled URL. The user logs in or subscribes and explicitly approves access in the browser. The helper polls privately while the backend verifies entitlement, claims the draft, and creates the first persisted caption.
+Social Agent public workflows lets user-owned agents begin a server-owned questionnaire before login. A restricted helper preserves the opaque guest handle in private local state. After the questionnaire, it creates a secure verification session and returns only a validated short-lived Handled URL. The user logs in or subscribes and explicitly approves access in the browser. The helper polls privately while the backend verifies entitlement and claims the draft, then stops at project readiness. Post copy is created only after the user explicitly requests a post.
 
 The skill teaches an agent how to:
 
@@ -117,4 +117,4 @@ The controlled-pilot `sai_` helper is not a fallback for unavailable Handled ver
 - [x] Remove the questionnaire-only release stop.
 - [ ] Verify existing-subscription and new-subscription browser paths.
 - [ ] Verify delayed entitlement confirmation and explicit consent.
-- [ ] Verify automatic claim, configured project, and first persisted caption.
+- [ ] Verify automatic claim and configured project without content, followed by explicit post creation.

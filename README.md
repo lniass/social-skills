@@ -2,7 +2,7 @@
 
 Public Agent Skill for guest-first, server-owned Social Agent onboarding and approval-gated social media operations.
 
-A new user can complete the hosted questionnaire before login or payment, open a validated short-lived Handled verification link, sign in or subscribe, explicitly approve agent access, and let the helper poll privately until the trusted backend returns the first persisted caption. Opaque guest and polling capabilities remain in private local state and never enter chat.
+A new user can complete the hosted questionnaire before login or payment, open a validated short-lived Handled verification link, sign in or subscribe, and explicitly approve agent access. The helper then confirms the project is ready without generating content. Only a later explicit user request creates post copy. Opaque guest and polling capabilities remain in private local state and never enter chat.
 
 **MCP is not part of current public onboarding.** Future optional MCP notes are isolated in [`docs/mcp-client-setup.md`](docs/mcp-client-setup.md).
 
@@ -25,10 +25,11 @@ resume
 answer
 verify
 poll-verification
+create-post --confirm-user-request
 forget
 ```
 
-`verify` displays only an exact validated Handled URL, saves that URL and its separate polling capability privately, and reuses the same safely unexpired link on repeated calls. `poll-verification` exposes only safe status fields and the terminal persisted caption. It does not fall back to MCP, ask the user to say `done`, use a controlled-pilot credential, or expose a guest or polling capability.
+`verify` displays only an exact validated Handled URL, saves that URL and its separate polling capability privately, and reuses the same safely unexpired link on repeated calls. `poll-verification` reports `project_ready` after setup without generating content. After the user explicitly requests a post, `create-post --confirm-user-request` uses the private capability to request idempotent post copy. No command exposes a guest or polling capability.
 
 See:
 
@@ -48,7 +49,8 @@ guest questionnaire completes
 → helper polls privately without a chat acknowledgement
 → backend atomically claims the guest draft
 → configured project is confirmed
-→ first persisted caption is generated
+→ user explicitly requests a post
+→ persisted post copy is generated
 ```
 
 Payment does not automatically authorize the agent. Once billing is confirmed, Handled advances to a separate consent action. The helper detects the final server result automatically. The user never pastes passwords, codes, callbacks, receipts, or tokens into chat.
@@ -133,6 +135,7 @@ python3 scripts/guest_questionnaire.py answer \
   --answer-json '<JSON object matching the server-returned schema>'
 python3 scripts/guest_questionnaire.py verify
 python3 scripts/guest_questionnaire.py poll-verification
+python3 scripts/post_workflows.py create-post --confirm-user-request
 python3 scripts/guest_questionnaire.py forget
 ```
 
@@ -149,7 +152,7 @@ The helper stores private state at `${XDG_STATE_HOME:-$HOME/.local/state}/social
 - Guest and polling capabilities remain outside model context.
 - The displayed verification URL contains only a one-time display capability, never a guest token, OAuth artifact, user ID, workspace ID, or tenant selector.
 - Login or payment never substitutes for explicit access approval.
-- Claim, continuation, and first-caption status are idempotent and server-confirmed.
+- Claim, explicit post creation, and post-copy status are idempotent and server-confirmed.
 - Social Connect is required before scheduling to a destination.
 - Content and assets remain approval-gated.
 - Nothing publishes from a user chat assertion alone.

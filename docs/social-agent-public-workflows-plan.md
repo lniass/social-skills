@@ -25,7 +25,7 @@ Facebook-first is a capability and posture inside this broad workflow.
 - [ ] Complete and verify browser login, subscription purchase when required, provider-confirmed entitlement, and explicit approve or deny consent.
 - [x] Have the trusted backend perform the idempotent REST claim after approval.
 - [x] Expose bounded safe verification polling states and configured-caption confirmation.
-- [x] Trigger first-caption generation and status continuation after successful claim.
+- [x] Stop at project readiness, then require an explicit post-creation request before generation.
 
 ### Social skills owns agent behavior
 
@@ -61,7 +61,8 @@ agent starts or resumes guest questionnaire through the fixed-origin helper
 → helper polls private server state automatically
 → trusted backend atomically claims the guest draft
 → helper observes configured-project proof
-→ hosted generation creates the first persisted caption
+→ user explicitly requests a post
+→ hosted generation creates persisted post copy
 ```
 
 The user does not say `done`. Payment alone does not grant agent access. Login, checkout, and entitlement confirmation advance the browser flow to a separate explicit consent action. Only the trusted backend can mark entitlement and claim complete.
@@ -88,7 +89,7 @@ The user does not say `done`. Payment alone does not grant agent access. Login, 
 
 ## Current release boundary
 
-The released helper supports `start`, `resume`, `answer`, `verify`, `poll-verification`, and `forget`. It can reach the first persisted caption through the trusted verification status contract. Public launch promotion remains blocked until the complete Handled browser flow is exercised in production, including entitlement pending, approval, denial, claim, generation, and terminal helper polling.
+The helpers support onboarding commands `start`, `resume`, `answer`, `verify`, `poll-verification`, and `forget` in `guest_questionnaire.py`, plus explicit `create-post --confirm-user-request` in `post_workflows.py`. Verification stops at `project_ready` with no content job. Only an explicit user-requested post workflow call may create the idempotent post-generation job. Public launch promotion remains blocked until this complete flow is exercised in production.
 
 ## Future optional MCP
 
