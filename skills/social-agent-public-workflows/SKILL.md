@@ -187,6 +187,18 @@ Use this only after secure authenticated continuation is available and the hoste
 4. Present the server-returned batch and require explicit approval.
 5. Schedule only approved versions to a trusted verified destination.
 
+## Flow: one-time scheduling
+
+**Controlled-pilot source only until authenticated post-onboarding continuation is released.** Use `scripts/scheduling_workflows.py schedule-one` only when the runtime was explicitly provisioned with a workspace-scoped Social Agent credential and the hosted service returns one exact approved content-version ID/hash and one explicitly selected verified Social Connect destination ID. It is not a guest-helper fallback.
+
+1. Confirm the exact post version, destination display name, and timezone-aware future time with the user.
+2. Run `schedule-one` with the unchanged server-returned identifiers and hash, a stable idempotency key, and `--confirm-user-schedule`.
+3. Treat `intent_recorded` only as local control-plane acceptance. Do not say externally scheduled or published.
+4. Wait for future server-confirmed submission and reconciliation states. Never call Social Connect/Postiz directly and never blindly resubmit an ambiguous provider operation.
+5. Recurring publication is deferred and must later reuse this same one-time path.
+
+Text-only posts may proceed when the approved post version does not require media. When media is requested or required, use the project’s approved reference-first asset profile and schedule only the exact approved rendered rendition. Never schedule simulated visual specifications or placeholders.
+
 ## Flow: approval
 
 Present server-returned content and approval choices as data. Do not invent options or weaken the approval gate. Do not schedule until approval is explicit and hosted state records it.
@@ -230,9 +242,22 @@ python3 scripts/guest_questionnaire.py forget
 
 Try `resume` before `start`. `start` refuses to overwrite saved progress. After completion, `verify` creates a session when needed and reuses its safely unexpired URL on repeated calls; `poll-verification` reads only its privately stored polling capability. Respect each returned `retry_after_seconds`; an HTTP 429 means wait before polling again. Use `forget` only when the user explicitly discards the draft. Do not set `SOCIAL_AGENT_ALLOW_CUSTOM_API_BASE_URL` in a customer runtime.
 
-## Controlled-pilot helper
+## Controlled-pilot helpers
 
-`scripts/social_agent_api.py` remains available only for an explicitly provisioned controlled pilot. It is not a fallback for failed or unavailable Handled verification. Never ask for or print its credential. Never call operator bootstrap. If the controlled-pilot credential is absent, stop rather than inventing identifiers or credentials.
+`scripts/social_agent_api.py` and `scripts/scheduling_workflows.py` remain available only for an explicitly provisioned controlled pilot. `scheduling_workflows.py` may use only the authenticated fixed-origin transport in `social_agent_api.py`; it must never call Social Connect/Postiz directly. Neither helper is a fallback for failed or unavailable Handled verification. Never ask for or print the credential. Never call operator bootstrap. If the controlled-pilot credential is absent, stop rather than inventing identifiers or credentials.
+
+The controlled-pilot one-time intent command is:
+
+```bash
+python3 scripts/scheduling_workflows.py schedule-one \
+  --project-reference-id '<server-returned-project-reference>' \
+  --content-version-id '<server-returned-content-version-uuid>' \
+  --content-hash '<server-returned-lowercase-sha256>' \
+  --destination-id '<server-returned-destination-uuid>' \
+  --publish-at '<confirmed-offset-aware-future-time>' \
+  --idempotency-key '<stable-operation-key>' \
+  --confirm-user-schedule
+```
 
 ## Future optional MCP integration
 

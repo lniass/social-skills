@@ -6,6 +6,26 @@ Public, installable Social Agent behavior and restricted helper scripts. The hos
 
 ## Architecture rules
 
+Canonical product workflow boundaries:
+
+```text
+Onboarding
+→ questionnaire and project readiness
+
+Post workflows
+→ text, image, carousel, or video post requests
+→ revisions and regeneration
+
+Approval workflows
+→ approve or reject exact content versions
+
+Scheduling workflows
+→ one-time publication
+→ recurring publication
+```
+
+Recurring publication must reuse the one-time publication path and must not bypass exact-version approval, destination selection, idempotency, external submission, or reconciliation.
+
 - Classify every new operation before choosing a file, route, or contract: onboarding, post creation, approval/revision, destination connection, or scheduling/recurrence.
 - Keep `guest_questionnaire.py` limited to questionnaire progress, verification, and `project_ready`. It must not own content creation, media generation, approval, or scheduling commands.
 - Keep reusable post intent in `post_workflows.py`. Post format, such as text, image, carousel, or video, is a request attribute or later extension, not a reason to return post creation to onboarding.
