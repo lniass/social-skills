@@ -9,7 +9,7 @@ import stat
 import tempfile
 import threading
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from collections.abc import Mapping
 from pathlib import Path
@@ -172,6 +172,8 @@ def write_state(
     token: str = TEST_TOKEN,
     base_url: str,
     polling_token: str | None = None,
+    verification_url: str | None = None,
+    verification_expires_at: str | None = None,
 ) -> None:
     state: dict[str, object] = {
         "api_version": guest.API_VERSION,
@@ -182,7 +184,16 @@ def write_state(
     if polling_token is not None:
         state["verification"] = {
             "polling_token": polling_token,
-            "expires_at": future_timestamp(),
+            "expires_at": verification_expires_at or future_timestamp(),
+            **(
+                {
+                    "verification_url": verification_url,
+                    "request_id": "verification-create-saved",
+                    "retry_after_seconds": 3,
+                }
+                if verification_url is not None
+                else {}
+            ),
         }
     path.write_text(json.dumps(state), encoding="utf-8")
     path.chmod(0o600)
@@ -218,7 +229,7 @@ class GuestQuestionnaireTests(unittest.TestCase):
             self.assertEqual(request["path"], "/v1/guest/questionnaire")
             self.assertIsNone(request["authorization"])
             self.assertIsNone(request["resume_token"])
-            self.assertEqual(request["user_agent"], "social-agent-public-workflows-guest/0.6.0")
+            self.assertEqual(request["user_agent"], "social-agent-public-workflows-guest/0.6.1")
 
     def test_resume_reads_private_state_and_sends_only_guest_header(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -367,6 +378,38 @@ class GuestQuestionnaireTests(unittest.TestCase):
         with patch.dict(os.environ, {guest.STATE_FILE_ENV: "relative/guest.json"}, clear=True):
             with self.assertRaisesRegex(guest.GuestQuestionnaireError, "absolute"):
                 guest._state_path()
+
+    def test_state_lock_uses_windows_locking_when_fcntl_is_unavailable(self) -> None:
+        class FakeMsvcrt:
+            LK_NBLCK = 1
+            LK_UNLCK = 2
+            calls: list[int] = []
+
+            @classmethod
+            def locking(cls, descriptor: int, mode: int, length: int) -> None:
+                self.assertGreaterEqual(descriptor, 0)
+                self.assertEqual(length, 1)
+                cls.calls.append(mode)
+
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "guest.json"
+            with patch.dict(os.environ, {guest.STATE_FILE_ENV: str(state_file)}, clear=True), patch.object(
+                guest, "fcntl", None
+            ), patch.object(guest, "msvcrt", FakeMsvcrt):
+                with guest._state_lock():
+                    pass
+
+        self.assertEqual(FakeMsvcrt.calls, [FakeMsvcrt.LK_NBLCK, FakeMsvcrt.LK_UNLCK])
+
+    def test_state_lock_fails_closed_without_platform_locking(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "guest.json"
+            with patch.dict(os.environ, {guest.STATE_FILE_ENV: str(state_file)}, clear=True), patch.object(
+                guest, "fcntl", None
+            ), patch.object(guest, "msvcrt", None):
+                with self.assertRaisesRegex(guest.GuestQuestionnaireError, "safe private-state lock"):
+                    with guest._state_lock():
+                        pass
 
     @unittest.skipUnless(os.name == "posix" and hasattr(os, "O_NOFOLLOW"), "requires POSIX no-follow support")
     def test_resume_rejects_state_file_symlink(self) -> None:
@@ -551,6 +594,75 @@ class GuestQuestionnaireTests(unittest.TestCase):
             self.assertIsNone(request["verification_token"])
             self.assertIsNone(request["authorization"])
 
+    def test_verify_reuses_saved_unexpired_url_without_rotating_server_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "guest.json"
+            with LocalServer((201, verification_create_response())) as base_url:
+                write_state(state_file, base_url=base_url)
+                with patch.dict(os.environ, environment(base_url, state_file), clear=True):
+                    first = guest._verify(30)
+                    second = guest._verify(30)
+
+            self.assertEqual(first["verification_url"], TEST_VERIFICATION_URL)
+            self.assertEqual(second, first)
+            self.assertEqual(len(RecordingHandler.requests), 1)
+            stored = json.loads(state_file.read_text(encoding="utf-8"))["verification"]
+            self.assertEqual(stored["verification_url"], TEST_VERIFICATION_URL)
+            self.assertEqual(stored["request_id"], "verification-create-1")
+            self.assertEqual(stored["retry_after_seconds"], 3)
+
+    def test_verify_reuse_requires_more_than_exact_safety_window(self) -> None:
+        fixed_now = datetime(2026, 7, 30, 12, 0, tzinfo=timezone.utc)
+
+        class FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz: tzinfo | None = None) -> datetime:
+                return fixed_now if tz is not None else fixed_now.replace(tzinfo=None)
+
+        base = {
+            "polling_token": TEST_POLLING_TOKEN,
+            "verification_url": TEST_VERIFICATION_URL,
+            "request_id": "verification-create-saved",
+            "retry_after_seconds": 3,
+        }
+        with patch.object(guest, "datetime", FixedDateTime):
+            at_boundary = guest._reusable_verification_result(
+                {**base, "expires_at": (fixed_now + timedelta(seconds=60)).isoformat()}
+            )
+            beyond_boundary = guest._reusable_verification_result(
+                {**base, "expires_at": (fixed_now + timedelta(seconds=61)).isoformat()}
+            )
+
+        self.assertIsNone(at_boundary)
+        self.assertEqual(beyond_boundary["verification_url"], TEST_VERIFICATION_URL)
+
+    def test_verify_rotates_saved_url_when_it_is_expired_or_near_expiry(self) -> None:
+        for remaining in (-1, 30):
+            with self.subTest(remaining=remaining), tempfile.TemporaryDirectory() as directory:
+                state_file = Path(directory) / "guest.json"
+                saved_expiry = (
+                    datetime.now(timezone.utc) + timedelta(seconds=remaining)
+                ).isoformat()
+                with LocalServer((201, verification_create_response())) as base_url:
+                    write_state(
+                        state_file,
+                        base_url=base_url,
+                        polling_token="gvp_" + "z" * 43,
+                        verification_url=(
+                            "https://handled.voicevine.ai/social-agent/verify#gvd_"
+                            + "y" * 43
+                        ),
+                        verification_expires_at=saved_expiry,
+                    )
+                    with patch.dict(os.environ, environment(base_url, state_file), clear=True):
+                        result = guest._verify(30)
+
+                self.assertEqual(result["verification_url"], TEST_VERIFICATION_URL)
+                self.assertEqual(len(RecordingHandler.requests), 1)
+                stored = json.loads(state_file.read_text(encoding="utf-8"))["verification"]
+                self.assertEqual(stored["polling_token"], TEST_POLLING_TOKEN)
+                self.assertEqual(stored["verification_url"], TEST_VERIFICATION_URL)
+
     def test_verify_rejects_untrusted_or_malformed_urls_without_saving_polling_state(self) -> None:
         unsafe_urls = (
             f"http://handled.voicevine.ai/social-agent/verify#{TEST_DISPLAY_TOKEN}",
@@ -634,10 +746,14 @@ class GuestQuestionnaireTests(unittest.TestCase):
                 with LocalServer((200, verification_status_response(status))) as base_url:
                     write_state(state_file, base_url=base_url, polling_token=TEST_POLLING_TOKEN)
                     with patch.dict(os.environ, environment(base_url, state_file), clear=True):
-                        result, cleanup_token = guest._poll_verification(30)
+                        stdout = io.StringIO()
+                        with contextlib.redirect_stdout(stdout):
+                            exit_code = guest.main(["poll-verification"])
+                result = json.loads(stdout.getvalue())
+                self.assertEqual(exit_code, 0)
                 self.assertEqual(result["status"], status)
-                self.assertIsNone(cleanup_token)
                 self.assertTrue(state_file.exists())
+                self.assertNotIn("verification", json.loads(state_file.read_text(encoding="utf-8")))
 
         invalid = verification_status_response("caption_ready")
         invalid["content_hash"] = "not-a-hash"
@@ -655,6 +771,24 @@ class GuestQuestionnaireTests(unittest.TestCase):
 
         safe = guest._safe_output({"message": TEST_POLLING_TOKEN})
         self.assertEqual(safe["message"], "[REDACTED]")
+
+    def test_terminal_output_flush_failure_preserves_verification_state(self) -> None:
+        class BrokenFlush(io.StringIO):
+            def flush(self) -> None:
+                raise OSError("synthetic flush failure")
+
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "guest.json"
+            with LocalServer((200, verification_status_response("denied"))) as base_url:
+                write_state(state_file, base_url=base_url, polling_token=TEST_POLLING_TOKEN)
+                with patch.dict(os.environ, environment(base_url, state_file), clear=True):
+                    with contextlib.redirect_stdout(BrokenFlush()), self.assertRaisesRegex(
+                        OSError, "synthetic flush failure"
+                    ):
+                        guest.main(["poll-verification"])
+
+            stored = json.loads(state_file.read_text(encoding="utf-8"))
+            self.assertEqual(stored["verification"]["polling_token"], TEST_POLLING_TOKEN)
 
     def test_verify_rejects_secret_bearing_request_id_and_expired_session(self) -> None:
         for mutation, error in (
@@ -699,6 +833,22 @@ class GuestQuestionnaireTests(unittest.TestCase):
                 with patch.dict(os.environ, environment(base_url, state_file), clear=True):
                     with self.assertRaisesRegex(guest.GuestQuestionnaireError, "newer private state was preserved"):
                         guest._forget_state(expected_polling_token=TEST_POLLING_TOKEN)
+            stored = json.loads(state_file.read_text(encoding="utf-8"))
+            self.assertEqual(stored["verification"]["polling_token"], rotated)
+
+    def test_terminal_cleanup_compare_preserves_rotated_state(self) -> None:
+        rotated = "gvp_" + "e" * 43
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "guest.json"
+            with LocalServer() as base_url:
+                write_state(state_file, base_url=base_url, polling_token=rotated)
+                with patch.dict(os.environ, environment(base_url, state_file), clear=True):
+                    with self.assertRaisesRegex(
+                        guest.GuestQuestionnaireError, "newer private state was preserved"
+                    ):
+                        guest._clear_verification_state(
+                            expected_polling_token=TEST_POLLING_TOKEN
+                        )
             stored = json.loads(state_file.read_text(encoding="utf-8"))
             self.assertEqual(stored["verification"]["polling_token"], rotated)
 

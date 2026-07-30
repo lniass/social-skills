@@ -13,7 +13,7 @@ lniass/social-skills
 ## Primary install
 
 ```bash
-npx -y skills@1.5.19 add lniass/social-skills
+npx -y skills@latest add lniass/social-skills
 ```
 
 ## Short title

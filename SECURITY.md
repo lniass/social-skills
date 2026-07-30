@@ -20,7 +20,7 @@ Include:
 
 ## Public onboarding boundary
 
-The public helper stores an opaque guest resume handle and separate opaque polling capability in a current-user-owned private state file. Neither value may enter model context, chat, URLs, CLI arguments, logs, telemetry, or examples.
+The public helper stores an opaque guest resume handle, the validated short-lived verification URL, and a separate opaque polling capability in a current-user-owned private state file. The guest and polling values may not enter model context, chat, URLs, CLI arguments, logs, telemetry, or examples. The display URL may appear only in the user's active private conversation and must not appear in logs, telemetry, issues, or examples.
 
 Browser login and authorization artifacts remain between Handled, Supabase, and the hosted backend. The helper must never receive passwords, cookies, OAuth codes, access tokens, refresh tokens, or Supabase session data.
 

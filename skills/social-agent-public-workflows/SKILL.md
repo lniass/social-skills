@@ -1,7 +1,7 @@
 ---
 name: social-agent-public-workflows
 description: Run server-owned guest onboarding through secure Handled verification, private polling, and first persisted caption continuation.
-version: 0.6.0
+version: 0.6.1
 author: SimpleTechX / VoiceVine
 license: MIT
 metadata:
@@ -79,9 +79,9 @@ Rules:
 
 ## Released verification behavior
 
-The helper supports `verify` and `poll-verification`. Run `verify` only after the hosted questionnaire reports `completed`. It safely creates or rotates one short-lived session, stores the private polling capability, and returns only the validated Handled URL plus safe timing/status fields. After displaying that URL, invoke `poll-verification` after `retry_after_seconds`. While status is pending, wait for the newly returned interval and poll again automatically. Do not ask the user to say `done`.
+The helper supports `verify` and `poll-verification`. Run `verify` only after the hosted questionnaire reports `completed`. It creates one short-lived session when needed, stores the validated Handled URL and private polling capability, and returns only the URL plus safe timing/status fields. Repeated `verify` calls reuse that same URL while it has more than 60 seconds of validity remaining; they do not rotate or invalidate a link already shown to the user. After displaying that URL, invoke `poll-verification` after `retry_after_seconds`. While status is pending, wait for the newly returned interval and poll again automatically. Do not ask the user to say `done`.
 
-Only `caption_ready` proves trusted claim, configured project creation, and persisted first-caption generation. The helper returns that caption and content hash, then clears private guest and polling state. `denied`, `expired`, or `failed` are terminal stops and preserve the guest draft. A later retry intent may run `verify` again to rotate the verification session without repeating the questionnaire. Do not fall back to MCP, a pricing link, a static credential, direct Supabase access, or a model-visible claim token.
+Only `caption_ready` proves trusted claim, configured project creation, and persisted first-caption generation. The helper returns that caption and content hash, then clears private guest and verification state. `denied`, `expired`, or `failed` are terminal stops; the helper clears the terminal verification state but preserves the guest draft. A later retry intent may run `verify` again to create a fresh verification session without repeating the questionnaire. Do not fall back to MCP, a pricing link, a static credential, direct Supabase access, or a model-visible guest token.
 
 ## Guest-first runtime flow
 
@@ -220,7 +220,7 @@ python3 scripts/guest_questionnaire.py poll-verification
 python3 scripts/guest_questionnaire.py forget
 ```
 
-Try `resume` before `start`. `start` refuses to overwrite saved progress. After completion, `verify` creates or rotates the session and `poll-verification` reads only its privately stored polling capability. Respect each returned `retry_after_seconds`; an HTTP 429 means wait before polling again. Use `forget` only when the user explicitly discards the draft. Do not set `SOCIAL_AGENT_ALLOW_CUSTOM_API_BASE_URL` in a customer runtime.
+Try `resume` before `start`. `start` refuses to overwrite saved progress. After completion, `verify` creates a session when needed and reuses its safely unexpired URL on repeated calls; `poll-verification` reads only its privately stored polling capability. Respect each returned `retry_after_seconds`; an HTTP 429 means wait before polling again. Use `forget` only when the user explicitly discards the draft. Do not set `SOCIAL_AGENT_ALLOW_CUSTOM_API_BASE_URL` in a customer runtime.
 
 ## Controlled-pilot helper
 
@@ -235,16 +235,22 @@ MCP is not part of current public onboarding. A later release may provide option
 Agent Skills CLI:
 
 ```bash
-npx -y skills@1.5.19 add lniass/social-skills
+npx -y skills@latest add lniass/social-skills
 ```
 
 Hermes complete-directory install:
 
 ```bash
-git clone https://github.com/lniass/social-skills.git
+git clone --depth 1 https://github.com/lniass/social-skills.git
 SKILL_DEST="${HERMES_HOME:-$HOME/.hermes}/skills/social-agent-public-workflows"
 install -d "$SKILL_DEST"
-cp -R social-skills/skills/social-agent-public-workflows/. "$SKILL_DEST/"
+rsync -a --delete social-skills/skills/social-agent-public-workflows/ "$SKILL_DEST/"
 ```
 
-Do not use a raw `SKILL.md` URL because it omits linked files. Install or copy the complete `skills/social-agent-public-workflows/` directory.
+Update an Agent Skills CLI installation with:
+
+```bash
+npx -y skills@latest update social-agent-public-workflows -y
+```
+
+For the Hermes complete-directory method, pull the clone, rerun the `rsync --delete` command, and run `/reload-skills` or start a new session. This method requires `git` and `rsync`. Do not use a raw `SKILL.md` URL because it omits linked files.

@@ -17,6 +17,7 @@ import re
 import secrets
 import stat
 import sys
+import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -30,8 +31,13 @@ try:
 except ImportError:  # pragma: no cover - Windows fallback
     fcntl = None  # type: ignore[assignment]
 
+try:
+    import msvcrt
+except ImportError:  # pragma: no cover - POSIX fallback
+    msvcrt = None  # type: ignore[assignment]
+
 API_VERSION = "2026-07-01"
-SKILL_VERSION = "0.6.0"
+SKILL_VERSION = "0.6.1"
 DEFAULT_API_BASE_URL = "https://social-agent-api.voicevine.ai"
 TRUSTED_HANDLED_ORIGIN = "https://handled.voicevine.ai"
 TRUSTED_HANDLED_VERIFICATION_PATH = "/social-agent/verify"
@@ -39,6 +45,7 @@ DEFAULT_TIMEOUT_SECONDS = 30.0
 MAX_TIMEOUT_SECONDS = 120.0
 MAX_RESPONSE_BYTES = 1_048_576
 MAX_REQUEST_BYTES = 65_536
+MIN_VERIFICATION_REUSE_SECONDS = 60
 CUSTOM_ORIGIN_ENV = "SOCIAL_AGENT_ALLOW_CUSTOM_API_BASE_URL"
 STATE_FILE_ENV = "SOCIAL_AGENT_GUEST_STATE_FILE"
 TRUE_VALUES = {"1", "true", "yes"}
@@ -246,16 +253,40 @@ def _load_state() -> dict[str, Any]:
     }
     verification = parsed.get("verification")
     if verification is not None:
-        if not isinstance(verification, dict) or set(verification) != {"polling_token", "expires_at"}:
+        legacy_keys = {"polling_token", "expires_at"}
+        reusable_keys = legacy_keys | {
+            "verification_url", "request_id", "retry_after_seconds"
+        }
+        if not isinstance(verification, dict):
+            raise GuestQuestionnaireError("Guest questionnaire verification state is invalid")
+        verification_keys = frozenset(verification)
+        if verification_keys not in {frozenset(legacy_keys), frozenset(reusable_keys)}:
             raise GuestQuestionnaireError("Guest questionnaire verification state is invalid")
         polling_token = verification.get("polling_token")
         verification_expires_at = verification.get("expires_at")
-        if not _is_valid_polling_token(polling_token) or not isinstance(verification_expires_at, str) or not verification_expires_at:
+        if not _is_valid_polling_token(polling_token):
             raise GuestQuestionnaireError("Guest questionnaire verification state is invalid")
-        state["verification"] = {
+        stored_verification: dict[str, Any] = {
             "polling_token": polling_token,
-            "expires_at": verification_expires_at,
+            "expires_at": _validate_timestamp(
+                verification_expires_at, "verification expiry"
+            ),
         }
+        if set(verification) == reusable_keys:
+            stored_verification.update(
+                {
+                    "verification_url": _validate_verification_url(
+                        verification.get("verification_url")
+                    ),
+                    "request_id": _require_public_identifier(
+                        verification.get("request_id"), "request ID", maximum=256
+                    ),
+                    "retry_after_seconds": _validate_retry_after(
+                        verification.get("retry_after_seconds"), required=True
+                    ),
+                }
+            )
+        state["verification"] = stored_verification
     return state
 
 
@@ -297,14 +328,44 @@ def _state_lock() -> Any:
         descriptor = os.open(lock_path, flags, 0o600)
     except OSError as exc:
         raise GuestQuestionnaireError("Could not lock the private guest questionnaire state") from exc
+    locked = False
     try:
         _validate_private_descriptor(descriptor)
         if fcntl is not None:
             fcntl.flock(descriptor, fcntl.LOCK_EX)
+        elif msvcrt is not None:  # pragma: no cover - exercised on Windows
+            if os.fstat(descriptor).st_size == 0:
+                os.write(descriptor, b"\0")
+                os.fsync(descriptor)
+            deadline = time.monotonic() + MAX_TIMEOUT_SECONDS
+            while True:
+                try:
+                    os.lseek(descriptor, 0, os.SEEK_SET)
+                    msvcrt.locking(  # type: ignore[attr-defined]
+                        descriptor, msvcrt.LK_NBLCK, 1  # type: ignore[attr-defined]
+                    )
+                    break
+                except OSError as exc:
+                    if time.monotonic() >= deadline:
+                        raise GuestQuestionnaireError(
+                            "Timed out locking the private guest questionnaire state"
+                        ) from exc
+                    time.sleep(0.05)
+        else:  # pragma: no cover - unsupported Python platform
+            raise GuestQuestionnaireError(
+                "This platform does not provide a safe private-state lock"
+            )
+        locked = True
         yield
     finally:
-        if fcntl is not None:
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        if locked:
+            if fcntl is not None:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            elif msvcrt is not None:  # pragma: no cover - exercised on Windows
+                os.lseek(descriptor, 0, os.SEEK_SET)
+                msvcrt.locking(  # type: ignore[attr-defined]
+                    descriptor, msvcrt.LK_UNLCK, 1  # type: ignore[attr-defined]
+                )
         os.close(descriptor)
 
 
@@ -413,6 +474,17 @@ def _forget_state_unlocked(*, expected_polling_token: str | None = None) -> None
 def _forget_state(*, expected_polling_token: str | None = None) -> None:
     with _state_lock():
         _forget_state_unlocked(expected_polling_token=expected_polling_token)
+
+
+def _clear_verification_state(*, expected_polling_token: str) -> None:
+    with _state_lock():
+        state = _load_state()
+        verification = state.get("verification")
+        current = verification.get("polling_token") if isinstance(verification, dict) else None
+        if not secrets.compare_digest(str(current), expected_polling_token):
+            raise GuestQuestionnaireError("Verification state changed; newer private state was preserved")
+        state.pop("verification", None)
+        _replace_state(state)
 
 
 def _api_base_url() -> str:
@@ -772,9 +844,35 @@ def _answer(*, step_key: str, answer: Any, timeout: float) -> dict[str, Any]:
     return _safe_output(result, state["resume_token"])
 
 
+def _reusable_verification_result(verification: object) -> dict[str, Any] | None:
+    if not isinstance(verification, dict) or "verification_url" not in verification:
+        return None
+    try:
+        expires_at = datetime.fromisoformat(
+            str(verification["expires_at"]).replace("Z", "+00:00")
+        ).astimezone(timezone.utc)
+    except (KeyError, TypeError, ValueError):
+        return None
+    now = datetime.now(timezone.utc)
+    if not now + timedelta(seconds=MIN_VERIFICATION_REUSE_SECONDS) < expires_at <= now + timedelta(days=1):
+        return None
+    return {
+        "api_version": API_VERSION,
+        "request_id": verification["request_id"],
+        "status": "pending_login",
+        "verification_url": verification["verification_url"],
+        "expires_at": verification["expires_at"],
+        "retry_after_seconds": verification["retry_after_seconds"],
+        "verification_saved": True,
+    }
+
+
 def _verify(timeout: float) -> dict[str, Any]:
     with _state_lock():
         state = _load_state()
+        reusable = _reusable_verification_result(state.get("verification"))
+        if reusable is not None:
+            return reusable
         result = _validate_verification_create_response(
             _request_json(
                 "POST",
@@ -788,6 +886,9 @@ def _verify(timeout: float) -> dict[str, Any]:
         state["verification"] = {
             "polling_token": polling_token,
             "expires_at": result["expires_at"],
+            "verification_url": result["verification_url"],
+            "request_id": result["request_id"],
+            "retry_after_seconds": result["retry_after_seconds"],
         }
         _replace_state(state)
     return {
@@ -829,7 +930,7 @@ def _poll_verification(timeout: float) -> tuple[dict[str, Any], str | None]:
             )
         result = _validate_verification_status_response(response)
     output = _safe_output(result, polling_token)
-    cleanup_token = polling_token if result["status"] == "caption_ready" else None
+    cleanup_token = polling_token if result["status"] in TERMINAL_VERIFICATION_STATUSES else None
     return output, cleanup_token
 
 
@@ -844,7 +945,7 @@ def build_parser() -> argparse.ArgumentParser:
     answer = subparsers.add_parser("answer", help="submit an answer for the current server-returned step")
     answer.add_argument("--step-key", required=True)
     answer.add_argument("--answer-json", type=_json_value, required=True)
-    subparsers.add_parser("verify", help="create or safely rotate a Handled verification session")
+    subparsers.add_parser("verify", help="create or safely reuse a Handled verification session")
     subparsers.add_parser("poll-verification", help="read the saved verification session status privately")
     subparsers.add_parser("forget", help="discard all local guest state only when explicitly requested")
     return parser
@@ -877,7 +978,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     sys.stdout.flush()
     if cleanup_polling_token is not None:
         try:
-            _forget_state(expected_polling_token=cleanup_polling_token)
+            if result.get("status") == "caption_ready":
+                _forget_state(expected_polling_token=cleanup_polling_token)
+            else:
+                _clear_verification_state(expected_polling_token=cleanup_polling_token)
         except GuestQuestionnaireError as exc:
             print(json.dumps({"ok": False, "error": _redact_text(str(exc))}), file=sys.stderr)
             return 1

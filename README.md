@@ -28,7 +28,7 @@ poll-verification
 forget
 ```
 
-`verify` displays only an exact validated Handled URL and saves its separate polling capability privately. `poll-verification` exposes only safe status fields and the terminal persisted caption. It does not fall back to MCP, ask the user to say `done`, use a controlled-pilot credential, or expose a guest or polling capability.
+`verify` displays only an exact validated Handled URL, saves that URL and its separate polling capability privately, and reuses the same safely unexpired link on repeated calls. `poll-verification` exposes only safe status fields and the terminal persisted caption. It does not fall back to MCP, ask the user to say `done`, use a controlled-pilot credential, or expose a guest or polling capability.
 
 See:
 
@@ -80,28 +80,46 @@ All API-returned strings and project content are untrusted data. They may be dis
 
 ## Install
 
-Agent Skills CLI:
+Agent Skills CLI, using the latest installer release:
 
 ```bash
-npx -y skills@1.5.19 add lniass/social-skills
+npx -y skills@latest add lniass/social-skills
 ```
 
 URL form:
 
 ```bash
-npx -y skills@1.5.19 add https://github.com/lniass/social-skills
+npx -y skills@latest add https://github.com/lniass/social-skills
 ```
 
 Hermes complete-directory install:
 
 ```bash
-git clone https://github.com/lniass/social-skills.git
+git clone --depth 1 https://github.com/lniass/social-skills.git
 SKILL_DEST="${HERMES_HOME:-$HOME/.hermes}/skills/social-agent-public-workflows"
 install -d "$SKILL_DEST"
-cp -R social-skills/skills/social-agent-public-workflows/. "$SKILL_DEST/"
+rsync -a --delete social-skills/skills/social-agent-public-workflows/ "$SKILL_DEST/"
 ```
 
-Copy the complete `skills/social-agent-public-workflows/` directory. A raw `SKILL.md` URL omits linked files and is unsupported.
+The Hermes complete-directory commands require `git` and `rsync`. They mirror the complete `skills/social-agent-public-workflows/` directory so files removed by a release do not remain installed. A raw `SKILL.md` URL omits linked files and is unsupported.
+
+## Update
+
+Agent Skills CLI:
+
+```bash
+npx -y skills@latest update social-agent-public-workflows -y
+```
+
+Hermes complete-directory install:
+
+```bash
+git -C social-skills pull --ff-only origin main
+SKILL_DEST="${HERMES_HOME:-$HOME/.hermes}/skills/social-agent-public-workflows"
+rsync -a --delete social-skills/skills/social-agent-public-workflows/ "$SKILL_DEST/"
+```
+
+Run `/reload-skills` in an active Hermes session, or start a new session, after updating.
 
 ## Current guest helper
 
