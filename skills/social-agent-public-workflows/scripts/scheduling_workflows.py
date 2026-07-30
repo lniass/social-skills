@@ -112,12 +112,28 @@ def _schedule_one(
             "Social Agent API did not confirm a one-time publication intent"
         )
     binding = result.get("request_binding")
+    binding_time_raw = (
+        binding.get("planned_publish_at") if isinstance(binding, dict) else None
+    )
+    try:
+        binding_time = (
+            datetime.fromisoformat(binding_time_raw.replace("Z", "+00:00"))
+            if isinstance(binding_time_raw, str)
+            else None
+        )
+    except ValueError:
+        binding_time = None
     if (
         not isinstance(binding, dict)
         or binding.get("api_version") != api.API_VERSION
         or binding.get("project_reference_id") != project_reference_id
         or binding.get("idempotency_key") != idempotency_key
+        or binding.get("content_version_id") != version_id
         or binding.get("content_hash") != content_hash
+        or binding.get("destination_id") != selected_destination_id
+        or binding_time is None
+        or binding_time.tzinfo is None
+        or binding_time.astimezone(UTC) != requested_time.astimezone(UTC)
     ):
         raise api.SocialAgentAPIError(
             "Social Agent API returned mismatched scheduling request evidence"
@@ -179,7 +195,7 @@ def _schedule_one(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Record one approved post publication intent through Social Connect"
+        description="Record one approved post publication intent through the hosted Social Agent API"
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     schedule = subparsers.add_parser(

@@ -38,7 +38,10 @@ def _response(
                     "api_version": scheduling.api.API_VERSION,
                     "project_reference_id": "project-one",
                     "idempotency_key": "schedule-one-001",
+                    "content_version_id": VERSION_ID,
                     "content_hash": CONTENT_HASH,
+                    "destination_id": DESTINATION_ID,
+                    "planned_publish_at": planned_publish_at,
                 },
                 "publications": [
                     {
@@ -144,6 +147,27 @@ class SchedulingWorkflowTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(
                 scheduling.api.SocialAgentAPIError, "mismatched publication"
+            ):
+                scheduling._schedule_one(
+                    project_reference_id="project-one",
+                    content_version_id=VERSION_ID,
+                    content_hash=CONTENT_HASH,
+                    destination_id=DESTINATION_ID,
+                    publish_at="2026-08-01T09:00:00-04:00",
+                    idempotency_key="schedule-one-001",
+                    user_confirmed=True,
+                    timeout=30,
+                    now=datetime(2026, 7, 30, 12, 0, tzinfo=UTC),
+                )
+
+        binding_mismatch = _response()
+        binding = binding_mismatch["job"]["result_json"]["request_binding"]  # type: ignore[index]
+        binding["destination_id"] = "33333333-3333-4333-8333-333333333333"  # type: ignore[index]
+        with patch.object(
+            scheduling.api, "request_json", return_value=binding_mismatch
+        ):
+            with self.assertRaisesRegex(
+                scheduling.api.SocialAgentAPIError, "mismatched scheduling request"
             ):
                 scheduling._schedule_one(
                     project_reference_id="project-one",

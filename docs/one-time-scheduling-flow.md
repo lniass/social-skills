@@ -51,7 +51,7 @@ The helper refuses to call the API without `--confirm-user-schedule`. It validat
 
 ## Truthful states
 
-The current released result is only:
+The current controlled-pilot result is only:
 
 ```text
 intent_recorded
