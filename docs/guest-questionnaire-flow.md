@@ -43,7 +43,7 @@ python3 scripts/guest_questionnaire.py forget
 - `resume` reads the private local handle and asks the fixed production API for current state.
 - `start` creates a guest draft only when no local state exists.
 - `answer` submits one answer for the exact current server-returned step.
-- `verify` creates or rotates one short-lived session, validates its exact Handled URL, and privately saves the polling capability.
+- `verify` creates a short-lived session when needed, reuses the same safely unexpired Handled URL on repeated calls, and privately saves its URL and polling capability.
 - `poll-verification` sends only that private capability and returns bounded safe status, timing, and terminal caption fields.
 - `forget` deletes local state only when the user explicitly discards the draft.
 
@@ -51,7 +51,7 @@ The helper stores the opaque resume handle at `${XDG_STATE_HOME:-$HOME/.local/st
 
 ## Verification polling behavior
 
-After `verify`, wait for its `retry_after_seconds` before calling `poll-verification`. Repeat automatically for `pending_login`, `pending_subscription`, `pending_entitlement_confirmation`, `pending_consent`, `claiming`, and `generating`. Do not ask the user for a chat acknowledgement. `caption_ready` returns the persisted caption and SHA-256 content hash, then clears private local state. `denied`, `expired`, and `failed` preserve the guest draft and stop safely. A later retry can run `verify` again without repeating the questionnaire.
+After `verify`, wait for its `retry_after_seconds` before calling `poll-verification`. Repeat automatically for `pending_login`, `pending_subscription`, `pending_entitlement_confirmation`, `pending_consent`, `claiming`, and `generating`. Do not ask the user for a chat acknowledgement. Re-running `verify` reuses the same safely unexpired URL instead of invalidating the link already displayed. `caption_ready` returns the persisted caption and SHA-256 content hash, then clears private local state. `denied`, `expired`, and `failed` clear only the terminal verification state, preserve the guest draft, and stop safely. A later retry can run `verify` again without repeating the questionnaire.
 
 ## Verify your Handled account
 
@@ -97,9 +97,9 @@ Possession of the URL alone cannot authorize claim. The server must also verify 
 
 Handled and Supabase own browser login and session handling. The helper never receives passwords, cookies, callback URLs, authorization codes, access tokens, refresh tokens, or Supabase session material.
 
-The helper stores only opaque guest and verification polling state in private local files. Polling credentials never appear in query strings, CLI arguments, stdout, stderr, logs, or chat. Polling accepts only a small fixed status set and bounded retry intervals.
+The helper stores the opaque guest handle, validated short-lived display URL, and verification polling state in a current-user-owned private local file. Only the validated display URL may appear in the user's active private conversation. Polling credentials never appear in query strings, CLI arguments, stdout, stderr, logs, or chat. Polling accepts only a small fixed status set and bounded retry intervals.
 
-A terminal claim is valid only when the server confirms the durable configured project. Private state is deleted only after that confirmation. Claim, replay, and continuation must be idempotent.
+A terminal claim is valid only when the server confirms the durable configured project. Guest draft state is deleted only after that confirmation. Denial, expiry, or failure clears only the terminal verification substate so a later retry creates a fresh link. Claim, replay, and continuation must be idempotent.
 
 ## Failure behavior
 

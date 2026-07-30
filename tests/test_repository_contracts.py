@@ -52,8 +52,11 @@ class RepositoryContractTests(unittest.TestCase):
         raw_install = "hermes skills install https://raw.githubusercontent.com"
         self.assertNotIn(raw_install, readme)
         self.assertNotIn(raw_install, skill)
-        self.assertIn("cp -R social-skills/skills/social-agent-public-workflows/.", readme)
-        self.assertIn("cp -R social-skills/skills/social-agent-public-workflows/.", skill)
+        mirror_install = "rsync -a --delete social-skills/skills/social-agent-public-workflows/"
+        self.assertIn(mirror_install, readme)
+        self.assertIn(mirror_install, skill)
+        self.assertIn("npx -y skills@latest add lniass/social-skills", readme)
+        self.assertIn("npx -y skills@latest update social-agent-public-workflows -y", readme)
         self.assertTrue(AUTH_HELPER_PATH.is_file())
         self.assertTrue(GUEST_HELPER_PATH.is_file())
 

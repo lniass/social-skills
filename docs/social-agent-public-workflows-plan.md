@@ -42,7 +42,7 @@ Facebook-first is a capability and posture inside this broad workflow.
 - [x] Validate the exact Handled HTTPS origin, approved path and fragment, expiry, and response shape before displaying a verification URL.
 - [x] Store polling capabilities privately and never print them.
 - [x] Define automatic bounded polling without asking for `done`.
-- [x] Delete private guest and verification state only after server-confirmed `caption_ready` proof.
+- [x] Delete private guest state only after server-confirmed `caption_ready` proof; clear terminal verification state on denial, expiry, or failure so a retry creates a fresh link.
 - [ ] Verify the complete Handled login, existing-subscription, new-subscription, delayed-entitlement, consent-denial, claim, and caption flow in production.
 
 ## Locked customer flow
@@ -97,7 +97,7 @@ Remote MCP OAuth remains a future post-onboarding interoperability phase. It may
 ## Public install
 
 ```bash
-npx -y skills@1.5.19 add lniass/social-skills
+npx -y skills@latest add lniass/social-skills
 ```
 
 Hermes complete-directory install:
@@ -106,7 +106,7 @@ Hermes complete-directory install:
 git clone https://github.com/lniass/social-skills.git
 SKILL_DEST="${HERMES_HOME:-$HOME/.hermes}/skills/social-agent-public-workflows"
 install -d "$SKILL_DEST"
-cp -R social-skills/skills/social-agent-public-workflows/. "$SKILL_DEST/"
+rsync -a --delete social-skills/skills/social-agent-public-workflows/ "$SKILL_DEST/"
 ```
 
-Copy the complete `skills/social-agent-public-workflows/` directory. A raw `SKILL.md` URL omits linked files.
+Mirror the complete `skills/social-agent-public-workflows/` directory with `rsync --delete`. A raw `SKILL.md` URL omits linked files.
