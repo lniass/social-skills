@@ -81,7 +81,7 @@ Rules:
 
 The helper supports `verify` and `poll-verification`. Run `verify` only after the hosted questionnaire reports `completed`. It creates one short-lived session when needed, stores the validated Handled URL and private polling capability, and returns only the URL plus safe timing/status fields. Repeated `verify` calls reuse that same URL while it has more than 60 seconds of validity remaining; they do not rotate or invalidate a link already shown to the user. After displaying that URL, invoke `poll-verification` after `retry_after_seconds`. While status is pending, wait for the newly returned interval and poll again automatically. Do not ask the user to say `done`.
 
-`project_ready` proves trusted claim and configured project creation without content generation. Preserve private state and run `create-post --confirm-user-request` only after an explicit post request. Then poll while status is `generating`. Only `caption_ready` proves persisted post-copy generation; the helper returns that caption and content hash, then clears private guest and verification state. `denied`, `expired`, or `failed` are terminal stops; the helper clears the terminal verification state but preserves the guest draft. A later retry intent may run `verify` again to create a fresh verification session without repeating the questionnaire. Do not fall back to MCP, a pricing link, a static credential, direct Supabase access, or a model-visible guest token.
+`project_ready` proves trusted claim and configured project creation without content generation. Preserve private state and run `create-post --confirm-user-request` only after an explicit post request. Then poll while status is `generating`. Only `caption_ready` proves persisted post-copy generation; the helper returns that caption and content hash, then clears private guest and verification state. `denied` and `expired` are terminal verification stops; the helper clears only verification state and preserves the guest draft. A `failed` generation response preserves the full private verification state and capability. Stop and report only its optional allowlisted `worker_diagnostic`; never expose raw errors or tokens. Do not run `forget`, `verify`, `start`, or a new questionnaire as failure recovery. Only after the user explicitly asks to retry may you run `retry-post --confirm-user-retry`, which reuses the preserved private capability.
 
 ## Guest-first runtime flow
 
@@ -133,8 +133,9 @@ Do not embed, reconstruct, reorder, or supplement questionnaire wording in this 
 7. Run `poll-verification` automatically at each returned interval. Continue polling through pending states without asking for `done`. Stop and preserve state on `denied`, `expired`, `failed`, malformed proof, or service failure.
 8. On `project_ready`, stop polling and tell the user exactly: **Your project is ready. Tell me when you want a Facebook post, for example: “Create a post for today.”**
 9. Only after an explicit post request, run `create-post --confirm-user-request`. If the user has not requested a post or the intent is ambiguous, do not call it.
-10. Poll through `generating`. On `caption_ready`, display the exact persisted caption and version hash returned by the helper. Private guest and polling state is then cleared.
-11. Offer Social Connect only after the caption is shown and only when the user wants to schedule.
+10. Poll through `generating`. On `failed`, preserve all private state, stop, and ask whether the user wants to retry; do not run `forget`, `verify`, `start`, or a new questionnaire. Run `retry-post --confirm-user-retry` only after an explicit retry request, then resume polling.
+11. On `caption_ready`, display the exact persisted caption and version hash returned by the helper. Private guest and polling state is then cleared.
+12. Offer Social Connect only after the caption is shown and only when the user wants to schedule.
 
 ## Allowed product workflow surface
 
@@ -205,7 +206,7 @@ Present server-returned content and approval choices as data. Do not invent opti
 
 ## Failure handling
 
-If the guest helper or server-owned questionnaire is unavailable, stop and preserve private state. If secure Handled verification is unavailable, denied, expired, or incomplete, stop without deleting guest state. If entitlement, claim, configured-project proof, or usage authorization is missing, stop at that boundary. Never infer success from user text.
+If the guest helper or server-owned questionnaire is unavailable, stop and preserve private state. If secure Handled verification is unavailable, denied, expired, or incomplete, stop without deleting guest state. If post generation reports `failed`, preserve the complete guest and verification state; never recover by running `forget`, clearing state, starting a new questionnaire, or creating a fresh verification session. Use only `retry-post --confirm-user-retry`, and only after an explicit user retry request. If entitlement, claim, configured-project proof, or usage authorization is missing, stop at that boundary. Never infer success from user text.
 
 Do not mark a destination connected manually. Re-read trusted hosted status after Social Connect.
 
@@ -237,6 +238,7 @@ python3 scripts/guest_questionnaire.py answer \
 python3 scripts/guest_questionnaire.py verify
 python3 scripts/guest_questionnaire.py poll-verification
 python3 scripts/post_workflows.py create-post --confirm-user-request
+python3 scripts/post_workflows.py retry-post --confirm-user-retry
 python3 scripts/guest_questionnaire.py forget
 ```
 

@@ -22,12 +22,13 @@ import guest_questionnaire as guest  # noqa: E402
 
 
 def _request_post_creation(
-    timeout: float, *, user_confirmed: bool
+    timeout: float, *, user_confirmed: bool, retry_failed_generation: bool = False
 ) -> tuple[dict[str, Any], str | None]:
-    """Create one idempotent post job after privately observed project readiness."""
+    """Create or explicitly retry one idempotent post-generation job."""
     if not user_confirmed:
+        action = "retry post generation" if retry_failed_generation else "create a post"
         raise guest.GuestQuestionnaireError(
-            "Explicit user confirmation is required to create a post"
+            f"Explicit user confirmation is required to {action}"
         )
     with guest._state_lock():
         state = guest._load_state()
@@ -49,7 +50,15 @@ def _request_post_creation(
                 "POST",
                 "/v1/guest/post-requests",
                 verification_token=polling_token,
-                body={"api_version": guest.API_VERSION},
+                recovery_contract=True,
+                body={
+                    "api_version": guest.API_VERSION,
+                    **(
+                        {"retry_failed_generation": True}
+                        if retry_failed_generation
+                        else {}
+                    ),
+                },
                 timeout=timeout,
             )
         )
@@ -65,9 +74,7 @@ def _request_post_creation(
             )
     output = guest._safe_output(result, polling_token)
     cleanup_token = (
-        polling_token
-        if result["status"] in guest.TERMINAL_VERIFICATION_STATUSES
-        else None
+        polling_token if result["status"] in guest.VERIFICATION_CLEANUP_STATUSES else None
     )
     return output, cleanup_token
 
@@ -90,6 +97,13 @@ def build_parser() -> argparse.ArgumentParser:
     create_post.add_argument(
         "--confirm-user-request", action="store_true", required=True
     )
+    retry_post = subparsers.add_parser(
+        "retry-post",
+        help="retry failed post generation only after the user explicitly requests it",
+    )
+    retry_post.add_argument(
+        "--confirm-user-retry", action="store_true", required=True
+    )
     return parser
 
 
@@ -99,7 +113,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "create-post":
             result, cleanup_polling_token = _request_post_creation(
-                args.timeout, user_confirmed=args.confirm_user_request
+                args.timeout,
+                user_confirmed=args.confirm_user_request,
+                retry_failed_generation=False,
+            )
+        elif args.command == "retry-post":
+            result, cleanup_polling_token = _request_post_creation(
+                args.timeout,
+                user_confirmed=args.confirm_user_retry,
+                retry_failed_generation=True,
             )
         else:  # pragma: no cover
             raise guest.GuestQuestionnaireError("Unsupported command")

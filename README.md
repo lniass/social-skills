@@ -21,7 +21,7 @@ The released guest helpers currently support:
 
 ```text
 guest_questionnaire.py: start, resume, answer, verify, poll-verification, forget
-post_workflows.py: create-post --confirm-user-request
+post_workflows.py: create-post --confirm-user-request, retry-post --confirm-user-retry
 ```
 
 The controlled-pilot source also contains:
@@ -32,7 +32,7 @@ scheduling_workflows.py: schedule-one --confirm-user-schedule
 
 It requires an explicitly provisioned workspace-scoped credential and is not yet a released guest/public continuation path.
 
-`verify` displays only an exact validated Handled URL, saves that URL and its separate polling capability privately, and reuses the same safely unexpired link on repeated calls. `poll-verification` reports `project_ready` after setup without generating content. After the user explicitly requests a post, `create-post --confirm-user-request` uses the private capability to request idempotent post copy. No command exposes a guest or polling capability.
+`verify` displays only an exact validated Handled URL, saves that URL and its separate polling capability privately, and reuses the same safely unexpired link on repeated calls. `poll-verification` reports `project_ready` after setup without generating content. After the user explicitly requests a post, `create-post --confirm-user-request` uses the private capability to request idempotent post copy. A failed generation preserves the complete private state and may be retried only with `retry-post --confirm-user-retry` after explicit user confirmation. Never use `forget` or a new questionnaire to recover from generation failure. No command exposes a guest or polling capability.
 
 The authenticated scheduling helper accepts one exact approved content version/hash, one explicitly selected verified destination, and one timezone-aware future time. Its current success state is only `intent_recorded`; it does not claim external scheduling or publication.
 
@@ -142,10 +142,11 @@ python3 scripts/guest_questionnaire.py answer \
 python3 scripts/guest_questionnaire.py verify
 python3 scripts/guest_questionnaire.py poll-verification
 python3 scripts/post_workflows.py create-post --confirm-user-request
+python3 scripts/post_workflows.py retry-post --confirm-user-retry
 python3 scripts/guest_questionnaire.py forget
 ```
 
-The helper stores private state at `${XDG_STATE_HOME:-$HOME/.local/state}/social-agent/guest-questionnaire.json` by default with mode `0600`. Never inspect, paste, attach, upload, or move that token through chat. Use `forget` only when the user explicitly discards the draft.
+The helper stores private state at `${XDG_STATE_HOME:-$HOME/.local/state}/social-agent/guest-questionnaire.json` by default with mode `0600`. Never inspect, paste, attach, upload, or move that token through chat. Use `forget` only when the user explicitly discards the draft. It is destructive and must never be used to recover from failed post generation; preserve state and use the explicit retry command instead.
 
 ## Controlled pilot
 

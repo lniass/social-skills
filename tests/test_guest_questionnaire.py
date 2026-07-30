@@ -122,6 +122,7 @@ class RecordingHandler(BaseHTTPRequestHandler):
                 "authorization": self.headers.get("Authorization"),
                 "resume_token": self.headers.get("X-Guest-Resume-Token"),
                 "verification_token": self.headers.get("X-Guest-Verification-Token"),
+                "recovery_contract": self.headers.get("X-Guest-Recovery-Contract"),
                 "user_agent": self.headers.get("User-Agent"),
                 "body": json.loads(raw_body) if raw_body else None,
             }
@@ -217,7 +218,7 @@ class GuestQuestionnaireTests(unittest.TestCase):
             {"start", "resume", "answer", "verify", "poll-verification", "forget"},
         )
         post_commands = post.build_parser()._subparsers._group_actions[0].choices  # type: ignore[attr-defined]
-        self.assertEqual(set(post_commands), {"create-post"})
+        self.assertEqual(set(post_commands), {"create-post", "retry-post"})
         self.assertNotIn("claim", commands)
 
     def test_start_saves_private_token_without_printing_it(self) -> None:
@@ -765,7 +766,11 @@ class GuestQuestionnaireTests(unittest.TestCase):
             self.assertEqual(explicit["method"], "POST")
             self.assertEqual(explicit["path"], "/v1/guest/post-requests")
             self.assertEqual(explicit["verification_token"], TEST_POLLING_TOKEN)
-            self.assertEqual(explicit["body"], {"api_version": guest.API_VERSION})
+            self.assertEqual(explicit["recovery_contract"], "1")
+            self.assertEqual(
+                explicit["body"],
+                {"api_version": guest.API_VERSION},
+            )
             self.assertIsNone(explicit["authorization"])
             self.assertIsNone(explicit["resume_token"])
 
@@ -849,8 +854,8 @@ class GuestQuestionnaireTests(unittest.TestCase):
             self.assertEqual(result["content_hash"], TEST_CONTENT_HASH)
             self.assertFalse(state_file.exists())
 
-    def test_terminal_failure_preserves_guest_state_and_rejects_false_caption_proof(self) -> None:
-        for status in ("denied", "expired", "failed"):
+    def test_denied_and_expired_preserve_guest_state_and_reject_false_caption_proof(self) -> None:
+        for status in ("denied", "expired"):
             with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
                 state_file = Path(directory) / "guest.json"
                 with LocalServer((200, verification_status_response(status))) as base_url:
@@ -869,6 +874,123 @@ class GuestQuestionnaireTests(unittest.TestCase):
         invalid["content_hash"] = "not-a-hash"
         with self.assertRaisesRegex(guest.GuestQuestionnaireError, "caption proof"):
             guest._validate_verification_status_response(invalid)
+
+    def test_failed_poll_preserves_full_private_verification_state(self) -> None:
+        response = verification_status_response("failed")
+        response["worker_diagnostic"] = "generation_failed"
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "guest.json"
+            with LocalServer((200, response)) as base_url:
+                write_state(
+                    state_file,
+                    base_url=base_url,
+                    polling_token=TEST_POLLING_TOKEN,
+                    verification_url=TEST_VERIFICATION_URL,
+                )
+                before = state_file.read_bytes()
+                with patch.dict(os.environ, environment(base_url, state_file), clear=True):
+                    stdout = io.StringIO()
+                    with contextlib.redirect_stdout(stdout):
+                        exit_code = guest.main(["poll-verification"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(
+                json.loads(stdout.getvalue())["worker_diagnostic"],
+                "generation_failed",
+            )
+            self.assertEqual(state_file.read_bytes(), before)
+            self.assertNotIn(TEST_POLLING_TOKEN, stdout.getvalue())
+
+    def test_failed_post_creation_is_non_destructive_and_explicit_retry_uses_exact_body(self) -> None:
+        failed = verification_status_response("failed")
+        failed["worker_diagnostic"] = "generation_failed"
+        responses = (
+            (200, verification_status_response("project_ready")),
+            (200, failed),
+            (200, verification_status_response("generating")),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "guest.json"
+            with LocalServer(*responses) as base_url:
+                write_state(
+                    state_file,
+                    base_url=base_url,
+                    polling_token=TEST_POLLING_TOKEN,
+                    verification_url=TEST_VERIFICATION_URL,
+                )
+                with patch.dict(os.environ, environment(base_url, state_file), clear=True):
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        self.assertEqual(guest.main(["poll-verification"]), 0)
+                    ready_state = state_file.read_bytes()
+                    failed_stdout = io.StringIO()
+                    with contextlib.redirect_stdout(failed_stdout):
+                        self.assertEqual(
+                            post.main(["create-post", "--confirm-user-request"]), 0
+                        )
+                    self.assertEqual(state_file.read_bytes(), ready_state)
+                    retry_stdout = io.StringIO()
+                    with contextlib.redirect_stdout(retry_stdout):
+                        self.assertEqual(
+                            post.main(["retry-post", "--confirm-user-retry"]), 0
+                        )
+
+            failed_output = json.loads(failed_stdout.getvalue())
+            self.assertEqual(failed_output["status"], "failed")
+            self.assertEqual(
+                failed_output["worker_diagnostic"], "generation_failed"
+            )
+            self.assertEqual(json.loads(retry_stdout.getvalue())["status"], "generating")
+            self.assertEqual(
+                RecordingHandler.requests[1]["body"],
+                {"api_version": guest.API_VERSION},
+            )
+            self.assertEqual(
+                RecordingHandler.requests[2]["body"],
+                {
+                    "api_version": guest.API_VERSION,
+                    "retry_failed_generation": True,
+                },
+            )
+            self.assertEqual(
+                RecordingHandler.requests[2]["path"], "/v1/guest/post-requests"
+            )
+            self.assertEqual(
+                RecordingHandler.requests[2]["verification_token"], TEST_POLLING_TOKEN
+            )
+
+    def test_worker_diagnostic_is_allowlisted_only_for_failed_safe_responses(self) -> None:
+        valid = verification_status_response("failed")
+        valid["worker_diagnostic"] = "generation_failed"
+        self.assertEqual(
+            guest._validate_verification_status_response(valid)["worker_diagnostic"],
+            "generation_failed",
+        )
+
+        invalid_cases = []
+        wrong_status = verification_status_response("generating")
+        wrong_status["worker_diagnostic"] = "generation_failed"
+        invalid_cases.append(wrong_status)
+        token_bearing = verification_status_response("failed")
+        token_bearing["worker_diagnostic"] = TEST_POLLING_TOKEN
+        invalid_cases.append(token_bearing)
+        unknown_diagnostic = verification_status_response("failed")
+        unknown_diagnostic["worker_diagnostic"] = "unknown_internal_failure"
+        invalid_cases.append(unknown_diagnostic)
+        raw_error = verification_status_response("failed")
+        raw_error["error"] = "raw worker stack"
+        invalid_cases.append(raw_error)
+        for response in invalid_cases:
+            with self.subTest(response=response):
+                with self.assertRaises(guest.GuestQuestionnaireError):
+                    guest._validate_verification_status_response(response)
+
+    def test_retry_post_requires_explicit_confirmation(self) -> None:
+        with self.assertRaisesRegex(
+            post.guest.GuestQuestionnaireError, "retry post generation"
+        ):
+            post._request_post_creation(
+                1, user_confirmed=False, retry_failed_generation=True
+            )
 
     def test_poll_requires_saved_verification_state_and_rejects_private_capability_in_output(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

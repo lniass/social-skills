@@ -203,6 +203,26 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertNotIn('headers["Authorization"]', helper_source)
         self.assertNotIn("What should I build", skill)
 
+    def test_failed_generation_recovery_is_explicit_and_non_destructive(self) -> None:
+        documents = (
+            SKILL_PATH,
+            ROOT / "README.md",
+            ROOT / "docs" / "guest-questionnaire-flow.md",
+        )
+        for path in documents:
+            with self.subTest(path=path.name):
+                text = path.read_text(encoding="utf-8")
+                self.assertIn("retry-post --confirm-user-retry", text)
+                self.assertIn("new questionnaire", text)
+        skill = SKILL_PATH.read_text(encoding="utf-8")
+        helper_source = POST_HELPER_PATH.read_text(encoding="utf-8")
+        self.assertIn("preserve the complete guest and verification state", skill)
+        self.assertIn('"retry-post"', helper_source)
+        self.assertIn('{"retry_failed_generation": True}', helper_source)
+        self.assertIn("recovery_contract=True", helper_source)
+        self.assertNotIn('"retry_failed_generation": False', helper_source)
+        self.assertIn("VERIFICATION_CLEANUP_STATUSES", helper_source)
+
 
 if __name__ == "__main__":
     unittest.main()
