@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILL_PATH = ROOT / "skills" / "social-agent-public-workflows" / "SKILL.md"
 AUTH_HELPER_PATH = ROOT / "skills" / "social-agent-public-workflows" / "scripts" / "social_agent_api.py"
 GUEST_HELPER_PATH = ROOT / "skills" / "social-agent-public-workflows" / "scripts" / "guest_questionnaire.py"
+POST_HELPER_PATH = ROOT / "skills" / "social-agent-public-workflows" / "scripts" / "post_workflows.py"
 MCP_SETUP_PATH = ROOT / "docs" / "mcp-client-setup.md"
 
 
@@ -34,6 +35,10 @@ class RepositoryContractTests(unittest.TestCase):
         for value in forbidden:
             with self.subTest(value=value):
                 self.assertNotIn(value, combined)
+        self.assertIn(
+            "Your project is ready. Tell me when you want a Facebook post",
+            combined,
+        )
         self.assertNotIn("?", combined)
         self.assertIn("Every onboarding and update question must come from", combined)
         self.assertIn("Do not ask locally defined fallback questions", combined)
@@ -70,7 +75,9 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn("I will detect approval automatically", skill)
         self.assertIn("MCP is not part of current public onboarding", skill)
         self.assertIn("The helper supports `verify` and `poll-verification`", skill)
-        self.assertIn("Only `caption_ready` proves trusted claim", skill)
+        self.assertIn("`project_ready` proves trusted claim and configured project creation", skill)
+        self.assertIn("Only `caption_ready` proves persisted post-copy generation", skill)
+        self.assertIn("create-post --confirm-user-request", skill)
         self.assertIn("poll again automatically", skill)
         self.assertNotIn("Stop unconditionally after questionnaire completion", skill)
         self.assertNotIn("Planned behavior only", skill)
@@ -174,7 +181,12 @@ class RepositoryContractTests(unittest.TestCase):
     def test_guest_helper_boundary_is_documented_without_claim_or_question_copy(self) -> None:
         skill = SKILL_PATH.read_text(encoding="utf-8")
         helper_source = GUEST_HELPER_PATH.read_text(encoding="utf-8")
+        post_helper_source = POST_HELPER_PATH.read_text(encoding="utf-8")
         self.assertIn("scripts/guest_questionnaire.py", skill)
+        self.assertIn("scripts/post_workflows.py", skill)
+        self.assertNotIn('"create-post"', helper_source)
+        self.assertIn('"create-post"', post_helper_source)
+        self.assertIn('"/v1/guest/post-requests"', post_helper_source)
         self.assertIn("mode `0600` or stricter", skill)
         self.assertIn("Try `resume` before `start`", skill)
         self.assertIn("Never paste a guest resume token or verification polling credential into a tool argument", skill)

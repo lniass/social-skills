@@ -2,7 +2,7 @@
 
 ## Release status
 
-This repository remains in a controlled pilot. Secure Handled verification-session creation and private polling are released in the helper. Public launch promotion still requires complete production login, subscription, consent, claim, and first-caption E2E evidence.
+This repository remains in a controlled pilot. Secure Handled verification-session creation and private polling are released in the helper. Public launch promotion still requires complete production login, subscription, consent, claim, project-readiness, and explicit post-creation E2E evidence.
 
 Do not place production credentials, guest handles, polling credentials, browser sessions, receipts, callback links, or verification URLs in issues, discussions, pull requests, exported transcripts, telemetry, reports, or examples. A validated short-lived verification URL is intentionally displayable only in the user's active private conversation.
 
@@ -52,4 +52,4 @@ MCP is not current public onboarding. A future release must start from a browser
 
 ## Supported versions
 
-Until versioned releases begin, only the current default branch is maintained. Public launch claims must wait for the documented verification, subscription, consent, claim, and first-caption end-to-end review.
+Until versioned releases begin, only the current default branch is maintained. Public launch claims must wait for the documented verification, subscription, consent, claim, project-readiness, and explicit post-creation end-to-end review.

@@ -257,10 +257,15 @@ def _load_state() -> dict[str, Any]:
         reusable_keys = legacy_keys | {
             "verification_url", "request_id", "retry_after_seconds"
         }
+        ready_legacy_keys = legacy_keys | {"status"}
+        ready_keys = reusable_keys | {"status"}
         if not isinstance(verification, dict):
             raise GuestQuestionnaireError("Guest questionnaire verification state is invalid")
         verification_keys = frozenset(verification)
-        if verification_keys not in {frozenset(legacy_keys), frozenset(reusable_keys)}:
+        if verification_keys not in {
+            frozenset(legacy_keys), frozenset(reusable_keys),
+            frozenset(ready_legacy_keys), frozenset(ready_keys),
+        }:
             raise GuestQuestionnaireError("Guest questionnaire verification state is invalid")
         polling_token = verification.get("polling_token")
         verification_expires_at = verification.get("expires_at")
@@ -272,7 +277,7 @@ def _load_state() -> dict[str, Any]:
                 verification_expires_at, "verification expiry"
             ),
         }
-        if set(verification) == reusable_keys:
+        if set(verification) in (reusable_keys, ready_keys):
             stored_verification.update(
                 {
                     "verification_url": _validate_verification_url(
@@ -286,6 +291,12 @@ def _load_state() -> dict[str, Any]:
                     ),
                 }
             )
+        if "status" in verification:
+            if verification.get("status") != "project_ready":
+                raise GuestQuestionnaireError(
+                    "Guest questionnaire verification state is invalid"
+                )
+            stored_verification["status"] = "project_ready"
         state["verification"] = stored_verification
     return state
 
@@ -737,10 +748,11 @@ def _validate_verification_create_response(result: dict[str, Any]) -> dict[str, 
     }
 
 
-PENDING_VERIFICATION_STATUSES = {
+POLLING_VERIFICATION_STATUSES = {
     "pending_login", "pending_subscription", "pending_entitlement_confirmation",
     "pending_consent", "claiming", "generating",
 }
+ACTIONABLE_VERIFICATION_STATUSES = {"project_ready"}
 TERMINAL_VERIFICATION_STATUSES = {"caption_ready", "denied", "expired", "failed"}
 
 
@@ -751,17 +763,22 @@ def _validate_verification_status_response(result: dict[str, Any]) -> dict[str, 
         raise GuestQuestionnaireError("Social Agent API returned an invalid verification status response")
     request_id = _require_public_identifier(result.get("request_id"), "request ID", maximum=256)
     status = result.get("status")
-    if not isinstance(status, str) or status not in PENDING_VERIFICATION_STATUSES | TERMINAL_VERIFICATION_STATUSES:
+    allowed_statuses = (
+        POLLING_VERIFICATION_STATUSES
+        | ACTIONABLE_VERIFICATION_STATUSES
+        | TERMINAL_VERIFICATION_STATUSES
+    )
+    if not isinstance(status, str) or status not in allowed_statuses:
         raise GuestQuestionnaireError("Social Agent API returned an invalid verification status")
     expires_at = _validate_timestamp(
         result.get("expires_at"),
         "verification expiry",
-        must_be_future=status in PENDING_VERIFICATION_STATUSES,
+        must_be_future=status in POLLING_VERIFICATION_STATUSES | ACTIONABLE_VERIFICATION_STATUSES,
     )
     retry_after = _validate_retry_after(
-        result.get("retry_after_seconds"), required=status in PENDING_VERIFICATION_STATUSES
+        result.get("retry_after_seconds"), required=status in POLLING_VERIFICATION_STATUSES
     )
-    if status in TERMINAL_VERIFICATION_STATUSES and retry_after is not None:
+    if status in ACTIONABLE_VERIFICATION_STATUSES | TERMINAL_VERIFICATION_STATUSES and retry_after is not None:
         raise GuestQuestionnaireError("Social Agent API returned an invalid verification retry interval")
     caption = result.get("caption")
     content_hash = result.get("content_hash")
@@ -856,6 +873,15 @@ def _reusable_verification_result(verification: object) -> dict[str, Any] | None
     now = datetime.now(timezone.utc)
     if not now + timedelta(seconds=MIN_VERIFICATION_REUSE_SECONDS) < expires_at <= now + timedelta(days=1):
         return None
+    if verification.get("status") == "project_ready":
+        return {
+            "api_version": API_VERSION,
+            "request_id": verification["request_id"],
+            "status": "project_ready",
+            "expires_at": verification["expires_at"],
+            "retry_after_seconds": None,
+            "verification_saved": True,
+        }
     return {
         "api_version": API_VERSION,
         "request_id": verification["request_id"],
@@ -929,6 +955,10 @@ def _poll_verification(timeout: float) -> tuple[dict[str, Any], str | None]:
                 None,
             )
         result = _validate_verification_status_response(response)
+        if result["status"] == "project_ready":
+            verification["status"] = "project_ready"
+            state["verification"] = verification
+            _replace_state(state)
     output = _safe_output(result, polling_token)
     cleanup_token = polling_token if result["status"] in TERMINAL_VERIFICATION_STATUSES else None
     return output, cleanup_token

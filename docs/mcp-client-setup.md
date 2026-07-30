@@ -2,7 +2,7 @@
 
 **Status:** Reserved future interoperability notes. MCP is not part of current public onboarding.
 
-Current public onboarding uses the bundled fixed-origin helper for questionnaire, server-returned Handled verification, and private polling through first persisted caption. Do not ask a public onboarding user to configure or authenticate MCP. Do not use MCP for login, subscription, consent, guest-draft claim, or as a fallback when Handled verification is unavailable.
+Current public onboarding uses the bundled fixed-origin helper for questionnaire, server-returned Handled verification, private polling through project readiness, and explicit user-requested post creation. Do not ask a public onboarding user to configure or authenticate MCP. Do not use MCP for login, subscription, consent, guest-draft claim, or as a fallback when Handled verification is unavailable.
 
 A future release may offer an optional remote Social Agent MCP integration after a project has already been securely claimed through the Handled browser and REST path. That release still requires real-client interoperability, audience binding, revocation, and an approved tool surface.
 

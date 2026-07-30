@@ -27,6 +27,12 @@ assert SPEC and SPEC.loader
 guest = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(guest)
 
+POST_SCRIPT_PATH = SCRIPT_PATH.with_name("post_workflows.py")
+POST_SPEC = importlib.util.spec_from_file_location("post_workflows", POST_SCRIPT_PATH)
+assert POST_SPEC and POST_SPEC.loader
+post = importlib.util.module_from_spec(POST_SPEC)
+POST_SPEC.loader.exec_module(post)
+
 TEST_TOKEN = "gq_" + "a" * 43
 TEST_POLLING_TOKEN = "gvp_" + "b" * 43
 TEST_DISPLAY_TOKEN = "gvd_" + "c" * 43
@@ -56,7 +62,9 @@ def verification_status_response(status: str = "pending_consent") -> dict[str, o
         "request_id": "verification-status-1",
         "status": status,
         "expires_at": future_timestamp(),
-        "retry_after_seconds": None if status in guest.TERMINAL_VERIFICATION_STATUSES else 3,
+        "retry_after_seconds": (
+            3 if status in guest.POLLING_VERIFICATION_STATUSES else None
+        ),
     }
     if status == "caption_ready":
         result.update({"caption": "First persisted caption", "content_hash": TEST_CONTENT_HASH})
@@ -204,7 +212,12 @@ class GuestQuestionnaireTests(unittest.TestCase):
         self.assertEqual(guest.DEFAULT_API_BASE_URL, "https://social-agent-api.voicevine.ai")
         parser = guest.build_parser()
         commands = parser._subparsers._group_actions[0].choices  # type: ignore[attr-defined]
-        self.assertEqual(set(commands), {"start", "resume", "answer", "verify", "poll-verification", "forget"})
+        self.assertEqual(
+            set(commands),
+            {"start", "resume", "answer", "verify", "poll-verification", "forget"},
+        )
+        post_commands = post.build_parser()._subparsers._group_actions[0].choices  # type: ignore[attr-defined]
+        self.assertEqual(set(post_commands), {"create-post"})
         self.assertNotIn("claim", commands)
 
     def test_start_saves_private_token_without_printing_it(self) -> None:
@@ -721,6 +734,103 @@ class GuestQuestionnaireTests(unittest.TestCase):
             self.assertEqual(request["verification_token"], TEST_POLLING_TOKEN)
             self.assertIsNone(request["resume_token"])
             self.assertIsNone(request["authorization"])
+
+    def test_project_ready_preserves_state_and_explicit_request_uses_private_capability(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "guest.json"
+            responses = (
+                (200, verification_status_response("project_ready")),
+                (200, verification_status_response("generating")),
+            )
+            with LocalServer(*responses) as base_url:
+                write_state(state_file, base_url=base_url, polling_token=TEST_POLLING_TOKEN)
+                with patch.dict(os.environ, environment(base_url, state_file), clear=True):
+                    ready_stdout = io.StringIO()
+                    with contextlib.redirect_stdout(ready_stdout):
+                        ready_exit = guest.main(["poll-verification"])
+                    request_stdout = io.StringIO()
+                    with contextlib.redirect_stdout(request_stdout):
+                        request_exit = post.main(
+                            ["create-post", "--confirm-user-request"]
+                        )
+
+            self.assertEqual(ready_exit, request_exit, 0)
+            self.assertEqual(json.loads(ready_stdout.getvalue())["status"], "project_ready")
+            self.assertEqual(json.loads(request_stdout.getvalue())["status"], "generating")
+            self.assertTrue(state_file.exists())
+            self.assertNotIn(TEST_POLLING_TOKEN, ready_stdout.getvalue())
+            self.assertNotIn(TEST_POLLING_TOKEN, request_stdout.getvalue())
+            self.assertEqual(len(RecordingHandler.requests), 2)
+            explicit = RecordingHandler.requests[1]
+            self.assertEqual(explicit["method"], "POST")
+            self.assertEqual(explicit["path"], "/v1/guest/post-requests")
+            self.assertEqual(explicit["verification_token"], TEST_POLLING_TOKEN)
+            self.assertEqual(explicit["body"], {"api_version": guest.API_VERSION})
+            self.assertIsNone(explicit["authorization"])
+            self.assertIsNone(explicit["resume_token"])
+
+    def test_post_creation_requires_observed_readiness_and_explicit_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "guest.json"
+            with LocalServer() as base_url:
+                write_state(state_file, base_url=base_url, polling_token=TEST_POLLING_TOKEN)
+                with patch.dict(os.environ, environment(base_url, state_file), clear=True):
+                    with self.assertRaisesRegex(
+                        post.guest.GuestQuestionnaireError, "Explicit user confirmation"
+                    ):
+                        post._request_post_creation(1, user_confirmed=False)
+                    with self.assertRaisesRegex(
+                        post.guest.GuestQuestionnaireError, "not ready for post creation"
+                    ):
+                        post._request_post_creation(1, user_confirmed=True)
+            self.assertEqual(RecordingHandler.requests, [])
+
+    def test_terminal_post_creation_response_clears_only_verification_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "guest.json"
+            responses = (
+                (200, verification_status_response("project_ready")),
+                (200, verification_status_response("expired")),
+            )
+            with LocalServer(*responses) as base_url:
+                write_state(state_file, base_url=base_url, polling_token=TEST_POLLING_TOKEN)
+                with patch.dict(os.environ, environment(base_url, state_file), clear=True):
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        self.assertEqual(guest.main(["poll-verification"]), 0)
+                    output = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        self.assertEqual(
+                            post.main(["create-post", "--confirm-user-request"]), 0
+                        )
+            self.assertEqual(json.loads(output.getvalue())["status"], "expired")
+            saved = json.loads(state_file.read_text(encoding="utf-8"))
+            self.assertNotIn("verification", saved)
+            self.assertEqual(saved["resume_token"], TEST_TOKEN)
+
+    def test_post_creation_caption_ready_clears_all_private_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "guest.json"
+            responses = (
+                (200, verification_status_response("project_ready")),
+                (200, verification_status_response("caption_ready")),
+            )
+            with LocalServer(*responses) as base_url:
+                write_state(state_file, base_url=base_url, polling_token=TEST_POLLING_TOKEN)
+                with patch.dict(os.environ, environment(base_url, state_file), clear=True):
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        self.assertEqual(guest.main(["poll-verification"]), 0)
+                    output = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        self.assertEqual(
+                            post.main(["create-post", "--confirm-user-request"]), 0
+                        )
+
+            result = json.loads(output.getvalue())
+            self.assertEqual(result["status"], "caption_ready")
+            self.assertEqual(result["caption"], "First persisted caption")
+            self.assertEqual(result["content_hash"], "d" * 64)
+            self.assertNotIn(TEST_POLLING_TOKEN, output.getvalue())
+            self.assertFalse(state_file.exists())
 
     def test_caption_ready_returns_persisted_caption_and_clears_private_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
