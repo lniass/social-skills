@@ -17,23 +17,29 @@ Do not construct a Handled verification URL or replace it with a direct pricing 
 
 ## Current release status
 
-The guest onboarding helper currently supports:
+The released guest helpers currently support:
 
 ```text
-start
-resume
-answer
-verify
-poll-verification
-create-post --confirm-user-request
-forget
+guest_questionnaire.py: start, resume, answer, verify, poll-verification, forget
+post_workflows.py: create-post --confirm-user-request
 ```
 
+The controlled-pilot source also contains:
+
+```text
+scheduling_workflows.py: schedule-one --confirm-user-schedule
+```
+
+It requires an explicitly provisioned workspace-scoped credential and is not yet a released guest/public continuation path.
+
 `verify` displays only an exact validated Handled URL, saves that URL and its separate polling capability privately, and reuses the same safely unexpired link on repeated calls. `poll-verification` reports `project_ready` after setup without generating content. After the user explicitly requests a post, `create-post --confirm-user-request` uses the private capability to request idempotent post copy. No command exposes a guest or polling capability.
+
+The authenticated scheduling helper accepts one exact approved content version/hash, one explicitly selected verified destination, and one timezone-aware future time. Its current success state is only `intent_recorded`; it does not claim external scheduling or publication.
 
 See:
 
 - [`docs/guest-questionnaire-flow.md`](docs/guest-questionnaire-flow.md)
+- [`docs/one-time-scheduling-flow.md`](docs/one-time-scheduling-flow.md)
 - [`docs/social-agent-public-workflows-plan.md`](docs/social-agent-public-workflows-plan.md)
 
 ## Current locked continuation flow

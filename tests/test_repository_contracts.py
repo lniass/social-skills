@@ -9,6 +9,7 @@ SKILL_PATH = ROOT / "skills" / "social-agent-public-workflows" / "SKILL.md"
 AUTH_HELPER_PATH = ROOT / "skills" / "social-agent-public-workflows" / "scripts" / "social_agent_api.py"
 GUEST_HELPER_PATH = ROOT / "skills" / "social-agent-public-workflows" / "scripts" / "guest_questionnaire.py"
 POST_HELPER_PATH = ROOT / "skills" / "social-agent-public-workflows" / "scripts" / "post_workflows.py"
+SCHEDULING_HELPER_PATH = ROOT / "skills" / "social-agent-public-workflows" / "scripts" / "scheduling_workflows.py"
 MCP_SETUP_PATH = ROOT / "docs" / "mcp-client-setup.md"
 
 
@@ -182,11 +183,19 @@ class RepositoryContractTests(unittest.TestCase):
         skill = SKILL_PATH.read_text(encoding="utf-8")
         helper_source = GUEST_HELPER_PATH.read_text(encoding="utf-8")
         post_helper_source = POST_HELPER_PATH.read_text(encoding="utf-8")
+        scheduling_helper_source = SCHEDULING_HELPER_PATH.read_text(encoding="utf-8")
         self.assertIn("scripts/guest_questionnaire.py", skill)
         self.assertIn("scripts/post_workflows.py", skill)
+        self.assertIn("scripts/scheduling_workflows.py", skill)
         self.assertNotIn('"create-post"', helper_source)
         self.assertIn('"create-post"', post_helper_source)
+        self.assertNotIn('"schedule-one"', helper_source)
+        self.assertNotIn('"schedule-one"', post_helper_source)
+        self.assertIn('"schedule-one"', scheduling_helper_source)
         self.assertIn('"/v1/guest/post-requests"', post_helper_source)
+        self.assertIn('"/v1/jobs"', scheduling_helper_source)
+        self.assertNotIn("mcp_postiz", scheduling_helper_source.lower())
+        self.assertNotIn("integrationscheduleposttool", scheduling_helper_source.lower())
         self.assertIn("mode `0600` or stricter", skill)
         self.assertIn("Try `resume` before `start`", skill)
         self.assertIn("Never paste a guest resume token or verification polling credential into a tool argument", skill)
