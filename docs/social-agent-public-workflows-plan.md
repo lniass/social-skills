@@ -42,7 +42,7 @@ Facebook-first is a capability and posture inside this broad workflow.
 - [x] Validate the exact Handled HTTPS origin, approved path and fragment, expiry, and response shape before displaying a verification URL.
 - [x] Store polling capabilities privately and never print them.
 - [x] Define automatic bounded polling without asking for `done`.
-- [x] Delete private guest state only after server-confirmed `caption_ready` proof; clear terminal verification state on denial, expiry, or failure so a retry creates a fresh link.
+- [x] Delete private guest state only after server-confirmed `caption_ready` proof; clear terminal verification state on denial or expiry, and preserve the full private capability on failed generation for explicit retry.
 - [ ] Verify the complete Handled login, existing-subscription, new-subscription, delayed-entitlement, consent-denial, claim, and caption flow in production.
 
 ## Locked customer flow
@@ -89,7 +89,7 @@ The user does not say `done`. Payment alone does not grant agent access. Login, 
 
 ## Current release boundary
 
-The helpers support onboarding commands `start`, `resume`, `answer`, `verify`, `poll-verification`, and `forget` in `guest_questionnaire.py`, plus explicit `create-post --confirm-user-request` in `post_workflows.py`. Verification stops at `project_ready` with no content job. Only an explicit user-requested post workflow call may create the idempotent post-generation job. Public launch promotion remains blocked until this complete flow is exercised in production.
+The helpers support onboarding commands `start`, `resume`, `answer`, `verify`, `poll-verification`, and `forget` in `guest_questionnaire.py`, plus explicit `create-post --confirm-user-request` and failed-generation `retry-post --confirm-user-retry` in `post_workflows.py`. Verification stops at `project_ready` with no content job. Only an explicit user-requested post workflow call may create or retry the idempotent post-generation job. Failed generation preserves its complete private verification capability; `forget` or a new questionnaire is forbidden as recovery. Public launch promotion remains blocked until this complete flow is exercised in production.
 
 ## Future optional MCP
 

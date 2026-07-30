@@ -554,6 +554,7 @@ def _request_json(
     *,
     token: str | None = None,
     verification_token: str | None = None,
+    recovery_contract: bool = False,
     body: dict[str, Any] | None = None,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
@@ -576,6 +577,12 @@ def _request_json(
         if not _is_valid_polling_token(verification_token):
             raise GuestQuestionnaireError("Guest questionnaire verification state is invalid")
         headers["X-Guest-Verification-Token"] = verification_token
+    if recovery_contract:
+        if verification_token is None:
+            raise GuestQuestionnaireError(
+                "Recovery contract requires a private verification capability"
+            )
+        headers["X-Guest-Recovery-Contract"] = "1"
     if encoded_body is not None:
         headers["Content-Type"] = "application/json"
 
@@ -754,11 +761,20 @@ POLLING_VERIFICATION_STATUSES = {
 }
 ACTIONABLE_VERIFICATION_STATUSES = {"project_ready"}
 TERMINAL_VERIFICATION_STATUSES = {"caption_ready", "denied", "expired", "failed"}
+VERIFICATION_CLEANUP_STATUSES = {"caption_ready", "denied", "expired"}
+ALLOWED_WORKER_DIAGNOSTICS = {
+    "generation_failed",
+    "hermes_executable_unavailable",
+    "hermes_subprocess_unavailable",
+    "provider_authentication_failed",
+    "provider_permanent_error",
+    "provider_policy_refusal",
+}
 
 
 def _validate_verification_status_response(result: dict[str, Any]) -> dict[str, Any]:
     required = {"api_version", "request_id", "status", "expires_at", "retry_after_seconds"}
-    optional = {"caption", "content_hash"}
+    optional = {"caption", "content_hash", "worker_diagnostic"}
     if not required.issubset(result) or set(result) - required - optional or result.get("api_version") != API_VERSION:
         raise GuestQuestionnaireError("Social Agent API returned an invalid verification status response")
     request_id = _require_public_identifier(result.get("request_id"), "request ID", maximum=256)
@@ -782,6 +798,7 @@ def _validate_verification_status_response(result: dict[str, Any]) -> dict[str, 
         raise GuestQuestionnaireError("Social Agent API returned an invalid verification retry interval")
     caption = result.get("caption")
     content_hash = result.get("content_hash")
+    worker_diagnostic = result.get("worker_diagnostic")
     if status == "caption_ready":
         if (
             not isinstance(caption, str)
@@ -794,6 +811,18 @@ def _validate_verification_status_response(result: dict[str, Any]) -> dict[str, 
             raise GuestQuestionnaireError("Social Agent API returned invalid configured caption proof")
     elif caption is not None or content_hash is not None:
         raise GuestQuestionnaireError("Social Agent API returned unexpected configured caption data")
+    if status == "failed" and worker_diagnostic is not None:
+        worker_diagnostic = _require_public_identifier(
+            worker_diagnostic, "worker diagnostic", maximum=64
+        )
+        if worker_diagnostic not in ALLOWED_WORKER_DIAGNOSTICS:
+            raise GuestQuestionnaireError(
+                "Social Agent API returned an invalid worker diagnostic"
+            )
+    elif worker_diagnostic is not None:
+        raise GuestQuestionnaireError(
+            "Social Agent API returned an unexpected worker diagnostic"
+        )
     return {
         "api_version": API_VERSION,
         "request_id": request_id,
@@ -801,6 +830,11 @@ def _validate_verification_status_response(result: dict[str, Any]) -> dict[str, 
         "expires_at": expires_at,
         "retry_after_seconds": retry_after,
         **({"caption": caption, "content_hash": content_hash} if status == "caption_ready" else {}),
+        **(
+            {"worker_diagnostic": worker_diagnostic}
+            if status == "failed" and worker_diagnostic is not None
+            else {}
+        ),
     }
 
 
@@ -943,6 +977,7 @@ def _poll_verification(timeout: float) -> tuple[dict[str, Any], str | None]:
                 "GET",
                 "/v1/guest/questionnaire/verification/status",
                 verification_token=polling_token,
+                recovery_contract=True,
                 timeout=timeout,
             )
         except VerificationRateLimited as exc:
@@ -960,7 +995,7 @@ def _poll_verification(timeout: float) -> tuple[dict[str, Any], str | None]:
             state["verification"] = verification
             _replace_state(state)
     output = _safe_output(result, polling_token)
-    cleanup_token = polling_token if result["status"] in TERMINAL_VERIFICATION_STATUSES else None
+    cleanup_token = polling_token if result["status"] in VERIFICATION_CLEANUP_STATUSES else None
     return output, cleanup_token
 
 

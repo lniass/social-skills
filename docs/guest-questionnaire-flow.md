@@ -44,6 +44,7 @@ python3 scripts/guest_questionnaire.py answer \
 python3 scripts/guest_questionnaire.py verify
 python3 scripts/guest_questionnaire.py poll-verification
 python3 scripts/post_workflows.py create-post --confirm-user-request
+python3 scripts/post_workflows.py retry-post --confirm-user-retry
 python3 scripts/guest_questionnaire.py forget
 ```
 
@@ -52,14 +53,15 @@ python3 scripts/guest_questionnaire.py forget
 - `answer` submits one answer for the exact current server-returned step.
 - `verify` creates a short-lived session when needed, reuses the same safely unexpired Handled URL on repeated calls, and privately saves its URL and polling capability.
 - `poll-verification` sends only that private capability and returns bounded safe status, timing, and terminal caption fields.
-- `create-post --confirm-user-request` is allowed only after `project_ready` and an explicit user post request; retries create at most one post-generation job.
-- `forget` deletes local state only when the user explicitly discards the draft.
+- `create-post --confirm-user-request` is allowed only after `project_ready` and an explicit user post request; ordinary calls explicitly request a non-retry operation.
+- `retry-post --confirm-user-retry` is allowed only after failed generation and an explicit user retry request; it posts the retry intent through the same private capability and endpoint.
+- `forget` deletes local state only when the user explicitly discards the draft. Never use it, `start`, `verify`, or a new questionnaire as failed-generation recovery.
 
 The helper stores the opaque resume handle at `${XDG_STATE_HOME:-$HOME/.local/state}/social-agent/guest-questionnaire.json` by default. It never prints that handle.
 
 ## Verification polling behavior
 
-After `verify`, wait for its `retry_after_seconds` before calling `poll-verification`. Repeat automatically for `pending_login`, `pending_subscription`, `pending_entitlement_confirmation`, `pending_consent`, and `claiming`. On `project_ready`, say **Your project is ready. Tell me when you want a Facebook post, for example: “Create a post for today.”** Run `create-post --confirm-user-request` only after an explicit post request, then poll through `generating`. `caption_ready` returns the persisted caption and SHA-256 content hash, then clears private local state. `denied`, `expired`, and `failed` clear only the terminal verification state, preserve the guest draft, and stop safely. A later retry can run `verify` again without repeating the questionnaire.
+After `verify`, wait for its `retry_after_seconds` before calling `poll-verification`. Repeat automatically for `pending_login`, `pending_subscription`, `pending_entitlement_confirmation`, `pending_consent`, and `claiming`. On `project_ready`, say **Your project is ready. Tell me when you want a Facebook post, for example: “Create a post for today.”** Run `create-post --confirm-user-request` only after an explicit post request, then poll through `generating`. `caption_ready` returns the persisted caption and SHA-256 content hash, then clears private local state. `denied` and `expired` clear only terminal verification state and preserve the guest draft. `failed` preserves the full guest and verification state, including the private polling capability, and may output only an optional allowlisted `worker_diagnostic`—never a raw error or token. Stop until the user explicitly requests `retry-post --confirm-user-retry`; do not forget state or begin a new questionnaire.
 
 ## Verify your Handled account
 
@@ -107,7 +109,7 @@ Handled and Supabase own browser login and session handling. The helper never re
 
 The helper stores the opaque guest handle, validated short-lived display URL, and verification polling state in a current-user-owned private local file. Only the validated display URL may appear in the user's active private conversation. Polling credentials never appear in query strings, CLI arguments, stdout, stderr, logs, or chat. Polling accepts only a small fixed status set and bounded retry intervals.
 
-A terminal claim is valid only when the server confirms the durable configured project. Guest draft state is deleted only after that confirmation. Denial, expiry, or failure clears only the terminal verification substate so a later retry creates a fresh link. Claim, replay, and continuation must be idempotent.
+A terminal claim is valid only when the server confirms the durable configured project. Guest draft state is deleted only after `caption_ready` proves persisted copy. Denial or expiry clears only the terminal verification substate so a later verification attempt can create a fresh link. Failed post generation is different: it preserves the complete private verification state so the same capability can authorize an explicit retry. Claim, replay, and continuation must be idempotent.
 
 ## Failure behavior
 
@@ -116,6 +118,7 @@ A terminal claim is valid only when the server confirms the durable configured p
 - User denial or checkout cancellation: stop without claiming.
 - Expired verification session: preserve the still-valid guest draft and offer a new server-created verification session when supported.
 - Malformed status or missing configured-project proof: fail closed and preserve state.
+- Failed generation: preserve all state, show only an allowlisted safe diagnostic when present, and require explicit `retry-post --confirm-user-retry`; never `forget`, clear, re-verify, or start a new questionnaire.
 - Network or server failure: do not infer success and do not switch transports.
 
 ## Future optional MCP
