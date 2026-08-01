@@ -297,6 +297,15 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("capabilities", help="read workspace capabilities")
+    job_contracts = subparsers.add_parser(
+        "job-contracts",
+        help="read what a job type's inputs must contain, before sending one",
+    )
+    job_contracts.add_argument(
+        "--job-type",
+        choices=JOB_TYPES,
+        help="one job type; omit for every published contract",
+    )
     subparsers.add_parser("projects", help="list projects visible to the credential")
 
     create_job = subparsers.add_parser("create-job", help="submit a deterministic job packet")
@@ -318,6 +327,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "capabilities":
             result = request_json("GET", "/v1/capabilities", timeout=args.timeout)
+        elif args.command == "job-contracts":
+            path = "/v1/job-contracts"
+            if args.job_type:
+                path = f"{path}/{quote(args.job_type, safe='')}"
+            result = request_json("GET", path, timeout=args.timeout)
         elif args.command == "projects":
             result = request_json("GET", "/v1/projects", timeout=args.timeout)
         elif args.command == "create-job":

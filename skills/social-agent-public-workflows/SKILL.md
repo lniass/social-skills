@@ -278,6 +278,24 @@ The projects list returns both an `id` and a `slug` for each project. **Every `p
 
 A workspace allows two projects. If a job reports that a project was not found, list the projects again and take the slug from that response. Never respond by running `setup_project` under a new name: that spends the second slot on an empty project and sends everything after it somewhere the user's real work is not.
 
+## Two things the server will tell you, and never guess either
+
+**Capabilities — what this workspace is allowed to do.** Limits, which platforms exist, which media types are accepted, which features are on. Workspace-scoped, and nothing you can work out for yourself.
+
+**Job contracts — how to shape a call.** Field names, types, required-ness, allowed values. Global, the same for everyone.
+
+Neither answers the other's question. A contract tells you `setup_project` takes a slug; only capabilities tells you the workspace already holds its two projects.
+
+Before sending a job type for the first time, read its contract:
+
+```bash
+python3 scripts/social_agent_api.py job-contracts --job-type approve_or_reject
+```
+
+`capabilities` carries a `job_contracts` block listing which job types have one. **Never invent a field name.** A rejected job answers with the exact fields it expected and the ones it did not recognise; read that and correct the call. Do not retry the same shape, do not retry with fewer fields, and do not switch to a different job type to route around it — an approval that never records leaves the user's post unschedulable and looks to them like the system ignored them.
+
+Fields the contract does not list are refused, not ignored. If you believe something belongs in a call and there is no field for it, the answer is that the server takes it from somewhere else — usually the project's stored questionnaire answers.
+
 ## Controlled-pilot helpers
 
 `scripts/social_agent_api.py` and `scripts/scheduling_workflows.py` remain available only for an explicitly provisioned controlled pilot. `scheduling_workflows.py` may use only the authenticated fixed-origin transport in `social_agent_api.py`; it must never call Social Connect/Postiz directly. Neither helper is a fallback for failed or unavailable Handled verification. Never ask for or print the credential. Never call operator bootstrap. If the controlled-pilot credential is absent, stop rather than inventing identifiers or credentials.
