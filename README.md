@@ -38,6 +38,8 @@ The authenticated scheduling helper accepts one exact approved content version/h
 
 See:
 
+- [`simulations/README.md`](simulations/README.md) - how to run an agent-driven simulation, what it costs, and which credentials it uses. Run one before shipping a change to `SKILL.md` or to a job's inputs: the test suite cannot tell you whether an agent can still find the road.
+- [`docs/job-input-contracts.md`](docs/job-input-contracts.md)
 - [`docs/guest-questionnaire-flow.md`](docs/guest-questionnaire-flow.md)
 - [`docs/one-time-scheduling-flow.md`](docs/one-time-scheduling-flow.md)
 - [`docs/social-agent-public-workflows-plan.md`](docs/social-agent-public-workflows-plan.md)
