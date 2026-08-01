@@ -190,13 +190,24 @@ def load_api_key() -> str:
         credential_file = os.environ.get("SOCIAL_AGENT_API_KEY_FILE", "").strip()
         if credential_file:
             credential = _read_credential_file(credential_file)
-    if not credential:
+    if credential:
+        if CREDENTIAL_PATTERN.fullmatch(credential) is None:
+            raise SocialAgentAPIError("The configured Social Agent credential has an invalid format")
+        return credential
+    # No provisioned credential. Fall back to a signed-in user's OAuth token,
+    # read from private state rather than passed in, so a token never has to
+    # travel through an argument, an environment dump, or the conversation.
+    # The API accepts either form on the same routes.
+    try:
+        from signin import SignInError, load_access_token
+    except ImportError:  # pragma: no cover - helper always ships alongside
         raise SocialAgentAPIError(
             "Set SOCIAL_AGENT_API_KEY or SOCIAL_AGENT_API_KEY_FILE to a workspace-scoped Social Agent credential"
-        )
-    if CREDENTIAL_PATTERN.fullmatch(credential) is None:
-        raise SocialAgentAPIError("The configured Social Agent credential has an invalid format")
-    return credential
+        ) from None
+    try:
+        return load_access_token()
+    except SignInError as exc:
+        raise SocialAgentAPIError(str(exc)) from exc
 
 
 def _read_limited(response: Any) -> bytes:
