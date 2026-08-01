@@ -93,7 +93,7 @@ class SignInStatusTests(unittest.TestCase):
         self.assertNotIn("secret-a", rendered)
 
 
-class SignInFinishTests(unittest.TestCase):
+class SignInWaitTests(unittest.TestCase):
     def setUp(self) -> None:
         self._directory = TemporaryDirectory()
         self.addCleanup(self._directory.cleanup)
@@ -108,91 +108,79 @@ class SignInFinishTests(unittest.TestCase):
                 "client_id": "abc",
                 "pending": {
                     "code_verifier": "v",
-                    "state": "expected-state",
-                    "redirect_uri": "http://127.0.0.1:8765/social-agent/callback",
+                    "state": "s" * 40,
+                    "poll_token": "p" * 40,
+                    "redirect_uri": "https://api.example/v1/signin/callback",
                     "token_endpoint": "https://auth.example/token",
                     "created_at": int(time.time()),
                 },
             }
         )
 
-    def test_a_mismatched_state_is_refused_without_calling_the_token_endpoint(
-        self,
-    ) -> None:
-        # Redeeming a response from a different sign-in would bind this install
-        # to whatever session produced it.
-        with mock.patch.object(signin, "_post_form") as post:
-            with self.assertRaises(signin.SignInError):
-                signin.command_finish(
-                    mock.Mock(
-                        redirect_url="http://127.0.0.1:8765/cb?code=c&state=wrong"
-                    )
-                )
-            post.assert_not_called()
-
-    def test_an_authorization_error_is_reported_without_its_description(self) -> None:
-        with self.assertRaises(signin.SignInError) as caught:
-            signin.command_finish(
-                mock.Mock(
-                    redirect_url=(
-                        "http://127.0.0.1:8765/cb?error=access_denied"
-                        "&error_description=user+said+no+to+everything"
-                    )
-                )
-            )
-        self.assertIn("access_denied", str(caught.exception))
-        self.assertNotIn("said no to everything", str(caught.exception))
-
-    def test_a_successful_exchange_clears_the_pending_request(self) -> None:
+    def test_a_completed_sign_in_exchanges_the_code_and_stores_the_token(self) -> None:
         with mock.patch.object(
             signin,
+            "_post_json",
+            return_value={"status": "ready", "authorization_code": "the-code"},
+        ), mock.patch.object(
+            signin,
             "_post_form",
-            return_value={
-                "access_token": "at",
-                "refresh_token": "rt",
-                "expires_in": 3600,
-            },
-        ):
-            result = signin.command_finish(
-                mock.Mock(
-                    redirect_url="http://127.0.0.1:8765/cb?code=c&state=expected-state"
-                )
-            )
+            return_value={"access_token": "at", "refresh_token": "rt", "expires_in": 60},
+        ) as exchange:
+            result = signin.command_wait(mock.Mock(timeout_seconds=30))
+
         self.assertEqual(result["status"], "signed_in")
-        state = signin._load_state()
-        self.assertNotIn("pending", state)
-        # The one-time request must not be replayable.
-        with self.assertRaises(signin.SignInError):
-            signin.command_finish(
-                mock.Mock(
-                    redirect_url="http://127.0.0.1:8765/cb?code=c&state=expected-state"
-                )
-            )
+        # The verifier is what makes the relayed code safe, so it must be the
+        # thing redeeming it.
+        self.assertEqual(exchange.call_args[0][1]["code_verifier"], "v")
+        self.assertNotIn("pending", signin._load_state())
 
-    def test_the_returned_payload_carries_no_token(self) -> None:
-        # Distinctive values, so the assertion cannot pass or fail by matching
-        # an ordinary English substring in the next_action text.
-        access = "ACCESS-TOKEN-c3f9a1"
-        refresh = "REFRESH-TOKEN-7b21de"
+    def test_the_user_is_never_asked_to_copy_anything(self) -> None:
+        # The whole point of this flow. If a command ever needs a pasted URL
+        # again, this is the test that should stop it.
+        self.assertFalse(hasattr(signin, "command_finish"))
+        parser = signin.build_parser()
+        actions = [a for a in parser._actions if hasattr(a, "choices") and a.choices]
+        commands = set(actions[0].choices) if actions else set()
+        self.assertIn("wait", commands)
+        self.assertNotIn("finish", commands)
+
+    def test_a_refused_sign_in_stops_and_clears_the_pending_request(self) -> None:
         with mock.patch.object(
             signin,
-            "_post_form",
-            return_value={
-                "access_token": access,
-                "refresh_token": refresh,
-                "expires_in": 60,
-            },
+            "_post_json",
+            return_value={"status": "failed", "error_code": "access_denied"},
         ):
-            result = signin.command_finish(
-                mock.Mock(
-                    redirect_url="http://127.0.0.1:8765/cb?code=c&state=expected-state"
-                )
-            )
-        rendered = json.dumps(result)
-        self.assertNotIn(access, rendered)
-        self.assertNotIn(refresh, rendered)
-        # Stored, though -- the token has to survive somewhere private.
-        self.assertEqual(signin._load_state()["access_token"], access)
+            with self.assertRaises(signin.SignInError) as caught:
+                signin.command_wait(mock.Mock(timeout_seconds=30))
+
+        self.assertIn("access_denied", str(caught.exception))
+        self.assertNotIn("pending", signin._load_state())
+
+    def test_a_timeout_preserves_the_pending_request(self) -> None:
+        # The person may still be mid-browser. Discarding here would throw away
+        # a sign-in they are about to complete.
+        with mock.patch.object(
+            signin, "_post_json", return_value={"status": "pending"}
+        ):
+            with self.assertRaises(signin.SignInError):
+                signin.command_wait(mock.Mock(timeout_seconds=0))
+
+        self.assertIn("pending", signin._load_state())
+
+    def test_an_expired_session_is_terminal(self) -> None:
+        with mock.patch.object(
+            signin, "_post_json", return_value={"status": "expired"}
+        ):
+            with self.assertRaises(signin.SignInError):
+                signin.command_wait(mock.Mock(timeout_seconds=30))
+
+        self.assertNotIn("pending", signin._load_state())
+
+    def test_waiting_without_starting_is_refused(self) -> None:
+        signin._save_state({"client_id": "abc"})
+        with self.assertRaises(signin.SignInError):
+            signin.command_wait(mock.Mock(timeout_seconds=30))
 
 
 class RefreshTests(unittest.TestCase):

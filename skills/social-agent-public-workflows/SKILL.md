@@ -255,7 +255,7 @@ Guest onboarding is one-time and clears its own private state on success. `scrip
 ```bash
 python3 scripts/signin.py status
 python3 scripts/signin.py start
-python3 scripts/signin.py finish --redirect-url '<the full URL the user copied>'
+python3 scripts/signin.py wait
 python3 scripts/signin.py refresh
 python3 scripts/signin.py forget
 ```
@@ -264,7 +264,9 @@ python3 scripts/signin.py forget
 
 **Always present a link as a tappable hyperlink, never as bare text.** Use markdown link syntax with a short label, for example `[Sign in to Handled](THE_SERVER_RETURNED_URL)`. A raw URL pasted into chat is not tappable in most clients, and a user on a phone then has to select a long string by hand and copy it without losing a character. Never wrap a link in backticks or a code fence, which makes it plain text in exactly the clients where tapping matters most. The same applies to every link this skill shows, including the Handled verification link.
 
-They sign into Handled in a browser and land on a page that **fails to load — that is expected and is not an error**; ask them to copy the whole address bar and pass it to `finish`. The browser step happens once per install; afterwards tokens refresh silently.
+After showing the link, run `wait`. It returns on its own once the person finishes in their browser, so **never ask the user to copy or paste anything back** — the same rule that already applies to Handled verification. The browser step happens once per install; afterwards tokens refresh silently.
+
+If `wait` reports it is still waiting, the person has not finished yet. Run it again rather than starting over: `start` mints a new link and abandons the one they are already looking at.
 
 Never print, echo, or pass a token. `signin.py` stores it in private local state and the other helpers read it from there, so no token needs to travel through an argument or the conversation. There is deliberately no command that emits one.
 

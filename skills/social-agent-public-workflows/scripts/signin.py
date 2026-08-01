@@ -54,12 +54,19 @@ TRUE_VALUES = {"1", "true", "yes"}
 #: mutating call to find out is exactly what must not happen.
 REFRESH_SKEW_SECONDS = 120
 
-#: Native-app redirect. Nothing listens on it: the user is expected to be
-#: signing in on a phone while the agent runs elsewhere, so a loopback server
-#: would have nothing to catch. The browser lands on a URL that fails to load
-#: and the user pastes that URL back -- which is the only step this flow asks a
-#: person to perform.
-DEFAULT_REDIRECT_URI = "http://127.0.0.1:8765/social-agent/callback"
+#: The browser lands on the API itself, which parks the authorization code for
+#: the waiting agent to collect. An earlier version redirected to a loopback
+#: address nothing could listen on, so the person had to copy a long URL back
+#: into chat -- which is where the attempt died on a phone, and which broke the
+#: rule the rest of this product follows: show a link, then poll privately.
+#:
+#: Only the code crosses that server, never a token. PKCE makes a code useless
+#: without the verifier, and the verifier never leaves this machine.
+CALLBACK_PATH = "/v1/signin/callback"
+
+#: How long to keep waiting for the person to finish in their browser.
+POLL_INTERVAL_SECONDS = 3
+POLL_TIMEOUT_SECONDS = 900
 
 CLIENT_NAME = "Social Agent public workflows"
 
@@ -334,16 +341,29 @@ def command_start(args: argparse.Namespace) -> dict[str, Any]:
     """Begin sign-in and return the URL the user should open."""
     state = _load_state()
     metadata = _discover()
-    redirect_uri = args.redirect_uri or state.get("redirect_uri") or DEFAULT_REDIRECT_URI
+    redirect_uri = args.redirect_uri or f"{_api_base_url()}{CALLBACK_PATH}"
+    # A client registered against a different redirect cannot be reused: the
+    # authorization server matches the redirect exactly, so a stale
+    # registration would fail at the least helpful moment.
+    if state.get("redirect_uri") != redirect_uri:
+        state.pop("client_id", None)
     client_id = _client_id(state, metadata, redirect_uri)
+    handoff = _post_json(f"{_api_base_url()}/v1/signin/sessions", {})
+    session_ref = str(handoff.get("session_ref") or "")
+    poll_token = str(handoff.get("poll_token") or "")
+    if not session_ref or not poll_token:
+        raise SignInError("The sign-in service did not start a session")
     verifier, challenge = _pkce_pair()
-    csrf = secrets.token_urlsafe(32)
+    # The session reference doubles as the OAuth state: the callback needs it to
+    # find the session, and it is unguessable, so it serves both purposes.
+    csrf = session_ref
     # The verifier never leaves this machine and the state value is compared on
     # return, so an authorization response captured from somewhere else cannot
     # be redeemed here.
     state["pending"] = {
         "code_verifier": verifier,
         "state": csrf,
+        "poll_token": poll_token,
         "redirect_uri": redirect_uri,
         "token_endpoint": metadata["token_endpoint"],
         "created_at": int(time.time()),
@@ -372,35 +392,67 @@ def command_start(args: argparse.Namespace) -> dict[str, Any]:
             "Present this to the user as a tappable markdown hyperlink, not as "
             "bare text and not inside backticks -- a raw URL is not tappable in "
             "most chat clients, and on a phone the user would have to select a "
-            "long string by hand. The browser will finish on a page that fails "
-            "to load, which is expected. Ask them to copy the full address bar "
-            "contents and pass it to `signin finish --redirect-url`."
+            "long string by hand. Then run `signin wait`, which completes on its "
+            "own once they finish in the browser. Never ask the user to copy "
+            "anything back."
         ),
     }
 
 
-def command_finish(args: argparse.Namespace) -> dict[str, Any]:
-    """Exchange the authorization code the user pasted back."""
+def command_wait(args: argparse.Namespace) -> dict[str, Any]:
+    """Wait for the person to finish in their browser, then complete sign-in.
+
+    Polls a server that holds only the authorization code. The token exchange
+    happens here, with the verifier that never left this machine -- so nothing
+    in the middle of this flow ever holds anything that could be used as the
+    user's account.
+    """
     state = _load_state()
     pending = state.get("pending")
     if not isinstance(pending, dict):
         raise SignInError("No sign-in is in progress; run `signin start` first")
 
-    parts = urlsplit(args.redirect_url)
-    query = parse_qs(parts.query)
-    if "error" in query:
-        # The authorization server's own error code is safe; its description
-        # is free text and is not surfaced.
-        raise SignInError(f"Sign-in was refused ({query['error'][0][:64]})")
-    codes = query.get("code")
-    returned_state = query.get("state")
-    if not codes or not returned_state:
-        raise SignInError("That URL does not contain an authorization code")
-    if not secrets.compare_digest(returned_state[0], str(pending.get("state", ""))):
-        # Either a stale link or a response meant for a different sign-in.
-        # Redeeming it would bind this install to whatever session produced it.
-        raise SignInError("This sign-in response does not match the request; start again")
+    session_ref = str(pending.get("state", ""))
+    poll_token = str(pending.get("poll_token", ""))
+    if not session_ref or not poll_token:
+        raise SignInError("This sign-in cannot be resumed; run `signin start` again")
 
+    # `or` would be wrong here: a deliberate 0 is falsy, and turning "check
+    # once and return" into a fifteen-minute wait is the kind of surprise that
+    # only shows up as a hang.
+    requested = getattr(args, "timeout_seconds", None)
+    deadline = time.time() + float(
+        POLL_TIMEOUT_SECONDS if requested is None else max(0.0, float(requested))
+    )
+    claim_url = f"{_api_base_url()}/v1/signin/sessions/{session_ref}/claim"
+    while True:
+        result = _post_json(claim_url, {"poll_token": poll_token})
+        status = str(result.get("status") or "")
+        if status == "ready":
+            code = str(result.get("authorization_code") or "")
+            if not code:
+                raise SignInError("The sign-in service returned no authorization code")
+            return _exchange(state, pending, code)
+        if status == "failed":
+            state.pop("pending", None)
+            _save_state(state)
+            raise SignInError(
+                f"Sign-in was not completed ({result.get('error_code') or 'unknown'})"
+            )
+        if status == "expired":
+            state.pop("pending", None)
+            _save_state(state)
+            raise SignInError("This sign-in expired before it was completed")
+        if time.time() >= deadline:
+            # The pending request is preserved: the person may still be
+            # mid-browser, and discarding it would waste a completed sign-in.
+            raise SignInError("Still waiting for sign-in to be completed")
+        time.sleep(POLL_INTERVAL_SECONDS)
+
+
+def _exchange(
+    state: dict[str, Any], pending: dict[str, Any], code: str
+) -> dict[str, Any]:
     tokens = _post_form(
         # Re-validated on the way out, not trusted because it was validated on
         # the way in. This is the one field that decides where a code and,
@@ -408,7 +460,7 @@ def command_finish(args: argparse.Namespace) -> dict[str, Any]:
         _https_only(str(pending["token_endpoint"]), what="Token endpoint"),
         {
             "grant_type": "authorization_code",
-            "code": codes[0],
+            "code": code,
             "redirect_uri": str(pending["redirect_uri"]),
             "client_id": str(state.get("client_id", "")),
             "code_verifier": str(pending["code_verifier"]),
@@ -525,9 +577,9 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--redirect-uri", default=None)
     start.set_defaults(handler=command_start)
 
-    finish = subparsers.add_parser("finish", help="Complete sign-in from the pasted URL")
-    finish.add_argument("--redirect-url", required=True)
-    finish.set_defaults(handler=command_finish)
+    wait = subparsers.add_parser("wait", help="Wait for the user to finish signing in")
+    wait.add_argument("--timeout-seconds", type=int, default=POLL_TIMEOUT_SECONDS)
+    wait.set_defaults(handler=command_wait)
 
     for name, handler, help_text in (
         ("status", command_status, "Report whether sign-in is usable"),
