@@ -369,10 +369,12 @@ def command_start(args: argparse.Namespace) -> dict[str, Any]:
             (endpoint.scheme, endpoint.netloc, endpoint.path, query, "")
         ),
         "next_action": (
-            "Ask the user to open this URL and sign into Handled. The browser "
-            "will finish on a page that fails to load -- that is expected. Ask "
-            "them to copy the full address bar contents and pass it to "
-            "`signin finish --redirect-url`."
+            "Present this to the user as a tappable markdown hyperlink, not as "
+            "bare text and not inside backticks -- a raw URL is not tappable in "
+            "most chat clients, and on a phone the user would have to select a "
+            "long string by hand. The browser will finish on a page that fails "
+            "to load, which is expected. Ask them to copy the full address bar "
+            "contents and pass it to `signin finish --redirect-url`."
         ),
     }
 
