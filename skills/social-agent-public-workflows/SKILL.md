@@ -272,6 +272,12 @@ Never print, echo, or pass a token. `signin.py` stores it in private local state
 
 If sign-in is refused or the user turns out not to have a project, stop and say so. Do not fall back to starting a questionnaire for a user who says they already have one — that creates a second empty workspace and hides their real work.
 
+## Naming a project
+
+The projects list returns both an `id` and a `slug` for each project. **Every `project_reference_id` is the `slug`.** The server also accepts the `id`, so either resolves, but write the slug — it is the identifier the rest of this skill and the server's own responses use.
+
+A workspace allows two projects. If a job reports that a project was not found, list the projects again and take the slug from that response. Never respond by running `setup_project` under a new name: that spends the second slot on an empty project and sends everything after it somewhere the user's real work is not.
+
 ## Controlled-pilot helpers
 
 `scripts/social_agent_api.py` and `scripts/scheduling_workflows.py` remain available only for an explicitly provisioned controlled pilot. `scheduling_workflows.py` may use only the authenticated fixed-origin transport in `social_agent_api.py`; it must never call Social Connect/Postiz directly. Neither helper is a fallback for failed or unavailable Handled verification. Never ask for or print the credential. Never call operator bootstrap. If the controlled-pilot credential is absent, stop rather than inventing identifiers or credentials.
@@ -280,7 +286,7 @@ The controlled-pilot one-time intent command is:
 
 ```bash
 python3 scripts/scheduling_workflows.py schedule-one \
-  --project-reference-id '<server-returned-project-reference>' \
+  --project-reference-id '<project slug from the projects list, not its id>' \
   --content-version-id '<server-returned-content-version-uuid>' \
   --content-hash '<server-returned-lowercase-sha256>' \
   --destination-id '<server-returned-destination-uuid>' \

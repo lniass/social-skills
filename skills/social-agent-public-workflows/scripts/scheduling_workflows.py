@@ -207,7 +207,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=api.DEFAULT_TIMEOUT_SECONDS,
         help="request timeout in seconds",
     )
-    schedule.add_argument("--project-reference-id", required=True)
+    schedule.add_argument(
+        "--project-reference-id",
+        required=True,
+        help="project slug from the projects list, not its id",
+    )
     schedule.add_argument("--content-version-id", required=True)
     schedule.add_argument("--content-hash", required=True)
     schedule.add_argument("--destination-id", required=True)

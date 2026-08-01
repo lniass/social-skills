@@ -302,7 +302,10 @@ def build_parser() -> argparse.ArgumentParser:
     create_job = subparsers.add_parser("create-job", help="submit a deterministic job packet")
     create_job.add_argument("--job-type", choices=JOB_TYPES, required=True)
     create_job.add_argument("--idempotency-key", required=True)
-    create_job.add_argument("--project-reference-id")
+    create_job.add_argument(
+        "--project-reference-id",
+        help="project slug from the projects list, not its id",
+    )
     create_job.add_argument("--inputs-json", type=_json_object, default={})
 
     job_status = subparsers.add_parser("job-status", help="read one job by its server ID")
