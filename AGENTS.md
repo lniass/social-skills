@@ -35,6 +35,33 @@ Recurring publication must reuse the one-time publication path and must not bypa
 - Shared private capability and HTTP handling may be reused internally, but secrets must never enter chat, prompts, generic tool arguments, logs, or redirects.
 - Update helper commands, skill instructions, repository contracts, install completeness checks, and hosted API tests together.
 
+## The server owns every question
+
+The hosted service is the only source of questionnaire and update questions:
+their text, options, order, recommendation flags, help URLs, validation, and
+completion state. This repository contains **no fallback question copy**, and an
+agent must never ask a locally invented question.
+
+This is enforced mechanically, not by convention. `tests/test_repository_contracts.py`
+asserts that **no installable file contains a literal question mark** — every
+`.md`, `.py`, `.json`, and `.yaml` under the skill directory. If a change fails
+that assertion, the fix is to remove the question, not to relax the test.
+
+Why it is enforced this way: a locally phrased question drifts from the server's
+schema silently. It keeps rendering, the user keeps answering, and the answers
+stop matching the step keys and field names the server validates — so the damage
+shows up later, as rejected answers or a mis-configured project, far from the
+copy that caused it. A blunt check that no installable file can contain a
+question at all is the cheap way to keep that impossible.
+
+Practical consequence: build query strings with `urlsplit`/`urlunsplit` rather
+than concatenating a literal separator. That is better code anyway, since it
+extends an endpoint that already carries a query instead of corrupting it.
+
+The same reasoning covers prompts and confirmations. If an agent needs to ask
+the user something, the wording belongs in `SKILL.md` as a behavioral rule
+phrased as an instruction, or it comes from a server response.
+
 ## Verification
 
 ```bash
