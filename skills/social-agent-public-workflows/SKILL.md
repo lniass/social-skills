@@ -1,6 +1,6 @@
 ---
 name: social-agent-public-workflows
-description: Run server-owned guest onboarding through secure Handled verification, explicit post creation, and private polling.
+description: Write, review, approve, and schedule Facebook posts for a business through the hosted Social Agent service. Use this whenever someone asks for a social media post or caption, wants to see posts already prepared for them, wants to approve or schedule one, wants to connect their Facebook Page, or wants recurring posting set up. Post copy comes from the hosted service and is never written locally. Covers first-time setup through secure Handled verification as well as returning users who already have a project.
 version: 0.6.1
 author: SimpleTechX / VoiceVine
 license: MIT
@@ -297,6 +297,8 @@ python3 scripts/social_agent_api.py job-contracts --job-type approve_or_reject
 Fields the contract does not list are refused, not ignored. If you believe something belongs in a call and there is no field for it, the answer is that the server takes it from somewhere else — usually the project's stored questionnaire answers.
 
 ## Controlled-pilot helpers
+
+**A configured `SOCIAL_AGENT_API_KEY` or `SOCIAL_AGENT_API_KEY_FILE` is the provisioning signal.** When one is set, this runtime is an explicitly provisioned controlled pilot and that workspace credential is the way in. Do not run guest onboarding and do not start a sign-in: the workspace already exists, and onboarding it again creates a second empty one whose posts the user will never see. List the projects first and work in the one that is there. When neither is set, this is a normal runtime, so use guest onboarding or sign-in as above and never treat a missing credential as something to work around.
 
 `scripts/social_agent_api.py` and `scripts/scheduling_workflows.py` remain available only for an explicitly provisioned controlled pilot. `scheduling_workflows.py` may use only the authenticated fixed-origin transport in `social_agent_api.py`; it must never call Social Connect/Postiz directly. Neither helper is a fallback for failed or unavailable Handled verification. Never ask for or print the credential. Never call operator bootstrap. If the controlled-pilot credential is absent, stop rather than inventing identifiers or credentials.
 
