@@ -286,6 +286,97 @@ class SocialAgentAPITests(unittest.TestCase):
         self.assertNotIn(TEST_KEY, message)
         self.assertNotIn("private backend detail", message)
 
+    def test_contract_violation_surfaces_safe_message_and_field_errors(self) -> None:
+        with LocalServer() as base_url, patch.dict(os.environ, local_environment(base_url), clear=True):
+            RecordingHandler.response_status = 422
+            RecordingHandler.response_body = {
+                "error": {
+                    "code": "JOB_INPUT_CONTRACT_VIOLATION",
+                    "message": (
+                        "inputs did not match the published contract for approve_or_reject. "
+                        "Read GET /v1/job-contracts/approve_or_reject for the exact fields."
+                    ),
+                    "details": {
+                        "job_type": "approve_or_reject",
+                        "contract_url": "/v1/job-contracts/approve_or_reject",
+                        "errors": [
+                            {"field": "action", "code": "unexpected_field", "ignored": TEST_KEY},
+                            {"field": TEST_KEY, "code": "unexpected_field"},
+                            {"field": "subject_id", "code": "required"},
+                            {
+                                "field": "decision",
+                                "code": "not_an_allowed_value",
+                                "allowed": ["approved", "rejected", "revision_requested"],
+                            },
+                        ],
+                    },
+                    "private": TEST_KEY,
+                }
+            }
+            with self.assertRaises(api.SocialAgentAPIError) as caught:
+                api.request_json("POST", "/v1/jobs", body={})
+
+        self.assertEqual(caught.exception.server_code, "JOB_INPUT_CONTRACT_VIOLATION")
+        self.assertEqual(
+            caught.exception.field_errors,
+            [
+                {"field": "action", "code": "unexpected_field"},
+                {"field": "[REDACTED]", "code": "unexpected_field"},
+                {"field": "subject_id", "code": "required"},
+                {
+                    "field": "decision",
+                    "code": "not_an_allowed_value",
+                    "allowed": ["approved", "rejected", "revision_requested"],
+                },
+            ],
+        )
+        message = str(caught.exception)
+        self.assertIn("Read GET /v1/job-contracts/approve_or_reject", message)
+        self.assertIn('"field":"action"', message)
+        self.assertIn('"code":"required"', message)
+        self.assertNotIn(TEST_KEY, message)
+        self.assertNotIn("ignored", message)
+        self.assertNotIn("private", message)
+
+    def test_create_job_fetches_and_prints_contract_after_contract_violation(self) -> None:
+        violation = api.SocialAgentAPIError(
+            "Social Agent API returned HTTP 422 (JOB_INPUT_CONTRACT_VIOLATION)",
+            server_code="JOB_INPUT_CONTRACT_VIOLATION",
+            field_errors=[{"field": "action", "code": "unexpected_field"}],
+        )
+        contract = {
+            "job_type": "approve_or_reject",
+            "fields": {
+                "subject_id": {"type": "uuid", "required": True},
+                "decision": {
+                    "type": "enum",
+                    "required": True,
+                    "values": ["approved", "rejected", "revision_requested"],
+                },
+            },
+        }
+        with patch.object(api, "request_json", side_effect=[violation, contract]) as request_json:
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                exit_code = api.main(
+                    [
+                        "create-job",
+                        "--job-type",
+                        "approve_or_reject",
+                        "--idempotency-key",
+                        "approval-001",
+                        "--inputs-json",
+                        '{"action":"approve"}',
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(request_json.call_count, 2)
+        self.assertEqual(request_json.call_args_list[1].args, ("GET", "/v1/job-contracts/approve_or_reject"))
+        printed = json.loads(stderr.getvalue())
+        self.assertFalse(printed["ok"])
+        self.assertEqual(printed["job_contract"], contract)
+
     def test_success_response_redacts_credentials_and_sensitive_fields(self) -> None:
         with LocalServer() as base_url, patch.dict(os.environ, local_environment(base_url), clear=True):
             RecordingHandler.response_body = {

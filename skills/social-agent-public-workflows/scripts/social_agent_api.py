@@ -32,6 +32,12 @@ TRUE_VALUES = {"1", "true", "yes"}
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 CREDENTIAL_PATTERN = re.compile(r"sai_[A-Za-z0-9_-]{8,64}\.[A-Za-z0-9_-]{43,256}")
 SAFE_ERROR_CODE_PATTERN = re.compile(r"[A-Z][A-Z0-9_]{0,63}")
+SAFE_FIELD_ERROR_CODE_PATTERN = re.compile(r"[a-z][a-z0-9_]{0,63}")
+MAX_SAFE_ERROR_MESSAGE_LENGTH = 2_000
+MAX_SAFE_FIELD_NAME_LENGTH = 67
+MAX_SAFE_FIELD_ERRORS = 100
+MAX_SAFE_EXPECTED_VALUES = 20
+MAX_SAFE_EXPECTED_VALUE_LENGTH = 128
 SENSITIVE_FIELD_PARTS = (
     "authorization",
     "password",
@@ -71,6 +77,17 @@ JOB_TYPES = (
 
 class SocialAgentAPIError(RuntimeError):
     """Safe, credential-redacted API failure."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        server_code: str | None = None,
+        field_errors: list[dict[str, Any]] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.server_code = server_code
+        self.field_errors = field_errors or []
 
 
 class _NoRedirectHandler(HTTPRedirectHandler):
@@ -217,20 +234,67 @@ def _read_limited(response: Any) -> bytes:
     return payload
 
 
-def _safe_server_error_code(payload: bytes) -> str | None:
+def _safe_printable_string(value: object, *, maximum: int) -> str | None:
+    if not isinstance(value, str) or not value or len(value) > maximum:
+        return None
+    if not all(character.isprintable() for character in value):
+        return None
+    return value
+
+
+def _safe_expected_value(value: object) -> object | None:
+    if isinstance(value, str):
+        return _safe_printable_string(value, maximum=MAX_SAFE_EXPECTED_VALUE_LENGTH)
+    if value is None or isinstance(value, bool | int):
+        return value
+    return None
+
+
+def _safe_contract_field_errors(error: dict[str, Any]) -> list[dict[str, Any]]:
+    details = error.get("details")
+    if not isinstance(details, dict):
+        return []
+    raw_errors = details.get("errors")
+    if not isinstance(raw_errors, list) or len(raw_errors) > MAX_SAFE_FIELD_ERRORS:
+        return []
+
+    safe_errors: list[dict[str, Any]] = []
+    for raw_error in raw_errors:
+        if not isinstance(raw_error, dict):
+            continue
+        field = _safe_printable_string(raw_error.get("field"), maximum=MAX_SAFE_FIELD_NAME_LENGTH)
+        code = raw_error.get("code")
+        if field is None or not isinstance(code, str) or SAFE_FIELD_ERROR_CODE_PATTERN.fullmatch(code) is None:
+            continue
+        safe_error: dict[str, Any] = {"field": field, "code": code}
+        for key in ("expected", "allowed"):
+            raw_expected = raw_error.get(key)
+            if not isinstance(raw_expected, list) or len(raw_expected) > MAX_SAFE_EXPECTED_VALUES:
+                continue
+            expected = [_safe_expected_value(item) for item in raw_expected]
+            if all(item is not None for item in expected):
+                safe_error[key] = expected
+        safe_errors.append(safe_error)
+    return safe_errors
+
+
+def _safe_server_error(payload: bytes) -> tuple[str | None, str | None, list[dict[str, Any]]]:
     try:
         parsed = json.loads(payload.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
-        return None
+        return None, None, []
     if not isinstance(parsed, dict):
-        return None
+        return None, None, []
     error = parsed.get("error")
     if not isinstance(error, dict):
-        return None
+        return None, None, []
     code = error.get("code")
-    if isinstance(code, str) and SAFE_ERROR_CODE_PATTERN.fullmatch(code):
-        return code
-    return None
+    if not isinstance(code, str) or SAFE_ERROR_CODE_PATTERN.fullmatch(code) is None:
+        return None, None, []
+    if code != "JOB_INPUT_CONTRACT_VIOLATION":
+        return code, None, []
+    message = _safe_printable_string(error.get("message"), maximum=MAX_SAFE_ERROR_MESSAGE_LENGTH)
+    return code, message, _safe_contract_field_errors(error)
 
 
 def _request_timeout(value: float) -> float:
@@ -265,9 +329,24 @@ def request_json(
             response_payload = _read_limited(response)
     except HTTPError as exc:
         response_payload = _read_limited(exc)
-        server_code = _safe_server_error_code(response_payload)
+        server_code, server_message, field_errors = _safe_server_error(response_payload)
+        redacted_field_errors = _redact_json(field_errors, credential)
+        if not isinstance(redacted_field_errors, list):  # pragma: no cover - list in, list out
+            redacted_field_errors = []
         suffix = f" ({server_code})" if server_code else ""
-        raise SocialAgentAPIError(f"Social Agent API returned HTTP {exc.code}{suffix}") from exc
+        message = f"Social Agent API returned HTTP {exc.code}{suffix}"
+        if server_message:
+            message = f"{message}: {_redact(server_message, credential)}"
+        if redacted_field_errors:
+            encoded_errors = json.dumps(
+                redacted_field_errors, ensure_ascii=False, separators=(",", ":")
+            )
+            message = f"{message} Field errors: {encoded_errors}"
+        raise SocialAgentAPIError(
+            message,
+            server_code=server_code,
+            field_errors=redacted_field_errors,
+        ) from exc
     except URLError as exc:
         reason = _redact(str(exc.reason), credential)
         raise SocialAgentAPIError(f"Could not reach the Social Agent API: {reason}") from exc
@@ -349,7 +428,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:  # pragma: no cover
             raise SocialAgentAPIError("Unsupported command")
     except SocialAgentAPIError as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
+        failure: dict[str, Any] = {"ok": False, "error": str(exc)}
+        if args.command == "create-job" and exc.server_code == "JOB_INPUT_CONTRACT_VIOLATION":
+            contract_path = f"/v1/job-contracts/{quote(args.job_type, safe='')}"
+            try:
+                failure["job_contract"] = request_json("GET", contract_path, timeout=args.timeout)
+            except SocialAgentAPIError as contract_exc:
+                failure["job_contract_error"] = str(contract_exc)
+        print(json.dumps(failure, ensure_ascii=False), file=sys.stderr)
         return 1
 
     print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))

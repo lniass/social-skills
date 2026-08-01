@@ -33,6 +33,8 @@ Recurring publication must reuse the one-time publication path and must not bypa
 - Prefer intent-level names such as `create-post` and `post-requests`. Do not name reusable product operations after an onboarding position or current artifact, such as `create-first-caption`.
 - A `guest` route qualifier describes temporary authentication/continuation transport, not product ownership. Keep the underlying operation reusable for a later authenticated route.
 - Shared private capability and HTTP handling may be reused internally, but secrets must never enter chat, prompts, generic tool arguments, logs, or redirects.
+- On `JOB_INPUT_CONTRACT_VIOLATION`, the helper must expose only the server's safe message and allowlisted field-error keys, then fetch and print the exact contract for that job type. Do not leave an agent to guess another payload.
+- Before pushing helper or skill behavior to `main`, review the diff, fix findings, run the orchestrator's relevant real-agent simulation against this checkout, and rerun it after any simulation-driven fix. This public repository has no separate production branch; production promotion belongs to the orchestrator release.
 - Update helper commands, skill instructions, repository contracts, install completeness checks, and hosted API tests together.
 
 ## The server owns every question
