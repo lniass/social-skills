@@ -264,7 +264,12 @@ def _discover() -> dict[str, Any]:
     Discovery starts at the resource rather than at a hardcoded issuer so a
     returning agent needs to know only the API it already talks to.
     """
-    resource = _get_json(f"{_api_base_url()}/.well-known/oauth-protected-resource")
+    resource = _get_json(
+        _https_only(
+            f"{_api_base_url()}/.well-known/oauth-protected-resource",
+            what="API base URL",
+        )
+    )
     servers = resource.get("authorization_servers")
     if not isinstance(servers, list) or not servers:
         raise SignInError("This deployment does not advertise an authorization server")
@@ -395,7 +400,10 @@ def command_finish(args: argparse.Namespace) -> dict[str, Any]:
         raise SignInError("This sign-in response does not match the request; start again")
 
     tokens = _post_form(
-        str(pending["token_endpoint"]),
+        # Re-validated on the way out, not trusted because it was validated on
+        # the way in. This is the one field that decides where a code and,
+        # subsequently, a refresh token are sent.
+        _https_only(str(pending["token_endpoint"]), what="Token endpoint"),
         {
             "grant_type": "authorization_code",
             "code": codes[0],
@@ -458,7 +466,7 @@ def load_access_token() -> str:
         raise SignInError("Not signed in; run `signin start`")
     metadata = _discover()
     tokens = _post_form(
-        metadata["token_endpoint"],
+        _https_only(metadata["token_endpoint"], what="Token endpoint"),
         {
             "grant_type": "refresh_token",
             "refresh_token": refresh,
