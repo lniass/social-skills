@@ -15,18 +15,24 @@ import os
 import re
 import stat
 import sys
+import tempfile
+import zlib
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, IO, Sequence
+from typing import IO, Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
+from uuid import UUID
 
 API_VERSION = "2026-07-01"
-SKILL_VERSION = "0.4.0"
+SKILL_VERSION = "0.6.3"
 DEFAULT_API_BASE_URL = "https://social-agent-api.voicevine.ai"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 MAX_TIMEOUT_SECONDS = 120.0
 MAX_RESPONSE_BYTES = 1_048_576
+MAX_ASSET_PREVIEW_BYTES = 25 * 1024 * 1024
+IMAGE_MEDIA_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
 CUSTOM_ORIGIN_ENV = "SOCIAL_AGENT_ALLOW_CUSTOM_API_BASE_URL"
 TRUE_VALUES = {"1", "true", "yes"}
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
@@ -68,6 +74,7 @@ JOB_TYPES = (
     "get_recurrence",
     "create_posts",
     "create_assets",
+    "list_posts",
     "approve_or_reject",
     "connect_destination",
     "schedule_posts",
@@ -360,6 +367,171 @@ def request_json(
     return _redact_json(parsed, credential)
 
 
+def _validated_asset_id(asset_id: str) -> str:
+    try:
+        return str(UUID(asset_id))
+    except ValueError as exc:
+        raise SocialAgentAPIError("Asset ID must be a UUID") from exc
+
+
+def _read_preview_bytes(response: Any) -> bytes:
+    payload = response.read(MAX_ASSET_PREVIEW_BYTES + 1)
+    if len(payload) > MAX_ASSET_PREVIEW_BYTES:
+        raise SocialAgentAPIError("Image preview exceeded the safe size limit")
+    return payload
+
+
+def _validate_png(payload: bytes) -> bool:
+    if not payload.startswith(b"\x89PNG\r\n\x1a\n"):
+        return False
+    offset = 8
+    saw_ihdr = False
+    while offset < len(payload):
+        if offset + 12 > len(payload):
+            return False
+        size = int.from_bytes(payload[offset:offset + 4], "big")
+        chunk_type = payload[offset + 4:offset + 8]
+        chunk_end = offset + 12 + size
+        if chunk_end > len(payload):
+            return False
+        chunk = payload[offset + 8:offset + 8 + size]
+        expected_crc = int.from_bytes(payload[offset + 8 + size:chunk_end], "big")
+        if zlib.crc32(chunk_type + chunk) & 0xFFFFFFFF != expected_crc:
+            return False
+        if not saw_ihdr:
+            if chunk_type != b"IHDR" or size != 13:
+                return False
+            saw_ihdr = True
+        if chunk_type == b"IEND":
+            return saw_ihdr and size == 0 and chunk_end == len(payload)
+        offset = chunk_end
+    return False
+
+
+def _validate_jpeg(payload: bytes) -> bool:
+    if len(payload) < 4 or not payload.startswith(b"\xff\xd8") or not payload.endswith(b"\xff\xd9"):
+        return False
+    offset = 2
+    saw_frame = False
+    while offset < len(payload) - 1:
+        if payload[offset] != 0xFF:
+            return False
+        while offset < len(payload) and payload[offset] == 0xFF:
+            offset += 1
+        if offset >= len(payload):
+            return False
+        marker = payload[offset]
+        offset += 1
+        if marker == 0xD9:
+            return offset == len(payload)
+        if marker == 0xDA:
+            return saw_frame
+        if marker in {0x01, *range(0xD0, 0xD8)}:
+            continue
+        if offset + 2 > len(payload):
+            return False
+        size = int.from_bytes(payload[offset:offset + 2], "big")
+        if size < 2 or offset + size > len(payload):
+            return False
+        if marker in {*range(0xC0, 0xC4), *range(0xC5, 0xC8), *range(0xC9, 0xCC), *range(0xCD, 0xD0)}:
+            saw_frame = True
+        offset += size
+    return False
+
+
+def _validate_webp(payload: bytes) -> bool:
+    if len(payload) < 20 or payload[:4] != b"RIFF" or payload[8:12] != b"WEBP":
+        return False
+    if int.from_bytes(payload[4:8], "little") != len(payload) - 8:
+        return False
+    offset = 12
+    saw_image_chunk = False
+    while offset < len(payload):
+        if offset + 8 > len(payload):
+            return False
+        chunk_type = payload[offset:offset + 4]
+        size = int.from_bytes(payload[offset + 4:offset + 8], "little")
+        chunk_end = offset + 8 + size
+        if chunk_end > len(payload):
+            return False
+        if chunk_type in {b"VP8 ", b"VP8L", b"VP8X"}:
+            saw_image_chunk = True
+        offset = chunk_end + (size % 2)
+    return saw_image_chunk and offset == len(payload)
+
+
+def _validate_preview_image(media_type: str, payload: bytes) -> None:
+    validators = {
+        "image/png": _validate_png,
+        "image/jpeg": _validate_jpeg,
+        "image/webp": _validate_webp,
+    }
+    if not payload or not validators[media_type](payload):
+        raise SocialAgentAPIError("Social Agent API returned an invalid image preview")
+
+
+def _write_private_preview(output: Path, payload: bytes) -> None:
+    parent = output.parent
+    if not parent.is_dir():
+        raise SocialAgentAPIError("Preview output directory does not exist")
+    if output.exists() and output.is_symlink():
+        raise SocialAgentAPIError("Preview output must not be a symbolic link")
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{output.name}.", dir=parent)
+    temporary_path = Path(temporary)
+    try:
+        if os.name == "posix":
+            os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "wb") as handle:
+            descriptor = -1
+            handle.write(payload)
+        os.replace(temporary_path, output)
+        if os.name == "posix":
+            output.chmod(0o600)
+    except OSError as exc:
+        raise SocialAgentAPIError("Could not save image preview") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        temporary_path.unlink(missing_ok=True)
+
+
+def fetch_asset_preview(asset_id: str, output: Path, *, timeout: float = DEFAULT_TIMEOUT_SECONDS) -> dict[str, object]:
+    """Fetch one authorized image rendition to a private local file.
+
+    The endpoint is derived from an opaque asset ID rather than accepted as an
+    arbitrary URL, so a bearer credential cannot be redirected to another host.
+    """
+    normalized_id = _validated_asset_id(asset_id)
+    credential = load_api_key()
+    base_url = _validate_api_base_url(os.environ.get("SOCIAL_AGENT_API_BASE_URL", DEFAULT_API_BASE_URL))
+    request = Request(
+        f"{base_url}/v1/assets/{normalized_id}/preview",
+        headers={
+            "Accept": ", ".join(sorted(IMAGE_MEDIA_TYPES)),
+            "Authorization": f"Bearer {credential}",
+            "User-Agent": f"social-agent-public-workflows/{SKILL_VERSION}",
+        },
+        method="GET",
+    )
+    try:
+        with build_opener(_NoRedirectHandler()).open(request, timeout=_request_timeout(timeout)) as response:
+            media_type = response.headers.get_content_type().lower()
+            if media_type not in IMAGE_MEDIA_TYPES:
+                raise SocialAgentAPIError("Social Agent API returned an unsupported image preview")
+            payload = _read_preview_bytes(response)
+            _validate_preview_image(media_type, payload)
+    except HTTPError as exc:
+        try:
+            _read_limited(exc)
+        except SocialAgentAPIError:
+            pass
+        raise SocialAgentAPIError("Image preview is unavailable") from exc
+    except URLError as exc:
+        raise SocialAgentAPIError(f"Could not reach the Social Agent API: {_redact(str(exc.reason), credential)}") from exc
+    _write_private_preview(output, payload)
+    return {"asset_id": normalized_id, "mime_type": media_type, "byte_size": len(payload)}
+
+
 def _json_object(raw_value: str) -> dict[str, Any]:
     try:
         value = json.loads(raw_value)
@@ -398,6 +570,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     job_status = subparsers.add_parser("job-status", help="read one job by its server ID")
     job_status.add_argument("job_id")
+    asset_preview = subparsers.add_parser("asset-preview", help="retrieve one authorized rendered image to a private local file")
+    asset_preview.add_argument("--asset-id", required=True)
+    asset_preview.add_argument("--output", type=Path, required=True)
     return parser
 
 
@@ -425,6 +600,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = request_json("POST", "/v1/jobs", body=payload, timeout=args.timeout)
         elif args.command == "job-status":
             result = request_json("GET", f"/v1/jobs/{quote(args.job_id, safe='')}", timeout=args.timeout)
+        elif args.command == "asset-preview":
+            result = fetch_asset_preview(args.asset_id, args.output, timeout=args.timeout)
         else:  # pragma: no cover
             raise SocialAgentAPIError("Unsupported command")
     except SocialAgentAPIError as exc:

@@ -106,6 +106,10 @@ class RepositoryContractTests(unittest.TestCase):
             "regenerate image(s) [number(s)]",
             "approve all images",
             "A caption decision never approves an image.",
+            "Flow: retrieve and display rendered image previews",
+            "submit an allowlisted `list_posts` job",
+            "attach that local image through the current client’s native image-attachment capability",
+            "Refresh is retrieval only.",
             "Require a separate explicit scheduling confirmation after copy and image decisions.",
         )
         for value in required:

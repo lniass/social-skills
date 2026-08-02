@@ -8,6 +8,7 @@ import os
 import tempfile
 import threading
 import unittest
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
@@ -25,6 +26,7 @@ api = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(api)
 
 TEST_KEY = "sai_testkey1." + "x" * 43
+ASSET_ID = "11111111-1111-4111-8111-111111111111"
 CUSTOM_ENV = api.CUSTOM_ORIGIN_ENV
 
 
@@ -41,6 +43,7 @@ class RecordingHandler(BaseHTTPRequestHandler):
     response_status = 200
     response_body: dict[str, object] = {"ok": True}
     response_raw_body: bytes | None = None
+    response_content_type = "application/json"
 
     def _handle(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))
@@ -51,6 +54,7 @@ class RecordingHandler(BaseHTTPRequestHandler):
                 "method": self.command,
                 "path": self.path,
                 "authorization": self.headers.get("Authorization"),
+                "accept": self.headers.get("Accept"),
                 "user_agent": self.headers.get("User-Agent"),
                 "body": body,
             }
@@ -59,7 +63,7 @@ class RecordingHandler(BaseHTTPRequestHandler):
         if encoded is None:
             encoded = json.dumps(self.__class__.response_body).encode("utf-8")
         self.send_response(self.__class__.response_status)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", self.__class__.response_content_type)
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
         try:
@@ -80,6 +84,7 @@ class LocalServer:
         RecordingHandler.response_status = 200
         RecordingHandler.response_body = {"ok": True}
         RecordingHandler.response_raw_body = None
+        RecordingHandler.response_content_type = "application/json"
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), RecordingHandler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -109,6 +114,7 @@ class SocialAgentAPITests(unittest.TestCase):
                 "get_recurrence",
                 "create_posts",
                 "create_assets",
+                "list_posts",
                 "approve_or_reject",
                 "connect_destination",
                 "schedule_posts",
@@ -126,7 +132,7 @@ class SocialAgentAPITests(unittest.TestCase):
         self.assertEqual(request["method"], "GET")
         self.assertEqual(request["path"], "/v1/capabilities")
         self.assertEqual(request["authorization"], f"Bearer {TEST_KEY}")
-        self.assertEqual(request["user_agent"], "social-agent-public-workflows/0.4.0")
+        self.assertEqual(request["user_agent"], "social-agent-public-workflows/0.6.3")
         self.assertIsNone(request["body"])
 
     def test_create_job_cli_sends_versioned_job_packet(self) -> None:
@@ -161,6 +167,57 @@ class SocialAgentAPITests(unittest.TestCase):
             },
         )
         self.assertEqual(json.loads(stdout.getvalue()), {"ok": True})
+
+    def test_asset_preview_fetches_private_image_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "review.png"
+            def chunk(chunk_type: bytes, data: bytes) -> bytes:
+                return len(data).to_bytes(4, "big") + chunk_type + data + zlib.crc32(chunk_type + data).to_bytes(4, "big")
+
+            image = (
+                b"\x89PNG\r\n\x1a\n"
+                + chunk(b"IHDR", b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00")
+                + chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00\x00"))
+                + chunk(b"IEND", b"")
+            )
+            with LocalServer() as base_url:
+                RecordingHandler.response_raw_body = image
+                RecordingHandler.response_content_type = "image/png"
+                with patch.dict(os.environ, local_environment(base_url), clear=True):
+                    result = api.fetch_asset_preview(ASSET_ID, output)
+            self.assertEqual(output.read_bytes(), image)
+            self.assertEqual(result["mime_type"], "image/png")
+            self.assertEqual(result["byte_size"], len(image))
+            if os.name == "posix":
+                self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+        request = RecordingHandler.requests[0]
+        self.assertEqual(request["path"], f"/v1/assets/{ASSET_ID}/preview")
+        self.assertEqual(request["authorization"], f"Bearer {TEST_KEY}")
+        self.assertEqual(request["accept"], "image/jpeg, image/png, image/webp")
+
+    def test_asset_preview_rejects_non_image_and_backend_detail(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, LocalServer() as base_url:
+            output = Path(directory) / "review.png"
+            RecordingHandler.response_status = 503
+            RecordingHandler.response_body = {"error": {"message": "bucket private-path provider-secret"}}
+            with patch.dict(os.environ, local_environment(base_url), clear=True):
+                with self.assertRaisesRegex(api.SocialAgentAPIError, "Image preview is unavailable") as caught:
+                    api.fetch_asset_preview(ASSET_ID, output)
+        self.assertFalse(output.exists())
+        self.assertNotIn("bucket", str(caught.exception))
+        self.assertNotIn("provider", str(caught.exception))
+
+    def test_asset_preview_rejects_mismatched_image_payload_and_invalid_id(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, LocalServer() as base_url:
+            output = Path(directory) / "review.png"
+            RecordingHandler.response_raw_body = b"not-an-image"
+            RecordingHandler.response_content_type = "image/png"
+            with patch.dict(os.environ, local_environment(base_url), clear=True):
+                with self.assertRaisesRegex(api.SocialAgentAPIError, "invalid image preview"):
+                    api.fetch_asset_preview(ASSET_ID, output)
+            self.assertFalse(output.exists())
+            with self.assertRaisesRegex(api.SocialAgentAPIError, "Asset ID must be a UUID"):
+                api.fetch_asset_preview("not-an-asset", output)
 
     def test_custom_origin_requires_explicit_development_override(self) -> None:
         with patch.dict(

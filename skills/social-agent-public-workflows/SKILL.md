@@ -1,7 +1,7 @@
 ---
 name: social-agent-public-workflows
 description: Write, review, approve, and schedule Facebook posts for a business through the hosted Social Agent service. Use this whenever someone asks for a social media post or caption, wants to see posts already prepared for them, wants to approve or schedule one, wants to connect their Facebook Page, or wants recurring posting set up. Post copy comes from the hosted service and is never written locally. Covers first-time setup through secure Handled verification as well as returning users who already have a project.
-version: 0.6.2
+version: 0.6.3
 author: SimpleTechX / VoiceVine
 license: MIT
 metadata:
@@ -164,6 +164,7 @@ configure_recurrence
 get_recurrence
 create_posts
 create_assets
+list_posts
 approve_or_reject
 connect_destination
 schedule_posts
@@ -203,6 +204,24 @@ Use this only after secure authenticated continuation is available and the hoste
 5. Recurring publication is deferred and must later reuse this same one-time path.
 
 Text-only posts may proceed when the approved post version does not require media. When media is requested or required, use the project’s approved reference-first asset profile and schedule only the exact approved rendered rendition. Never schedule simulated visual specifications or placeholders.
+
+## Flow: retrieve and display rendered image previews
+
+Use this flow after captions have been displayed and before any image approval. The API and database remain the source of truth for the review batch and immutable asset binding.
+
+1. Read the `list_posts` contract before first use, then submit an allowlisted `list_posts` job for the confirmed project reference and read its completed job status.
+2. Use only a returned asset with `rendered_media` set to `true`, the caption-associated immutable asset ID, and a non-empty preview reference. Never derive a storage path or make an arbitrary authenticated request.
+3. Retrieve the actual image with the bundled helper. Give it a private temporary output file, then attach that local image through the current client’s native image-attachment capability. Do not show the output path, command output, asset ID, storage details, prompt, provider, model, or checksum to the user.
+
+```bash
+python3 scripts/social_agent_api.py asset-preview \
+  --asset-id '<server-returned-asset-id>' \
+  --output '<private-temporary-image-path>'
+```
+
+4. Pair each attached image with the same numbered caption and state that it is review-only. The native attachment provides the full-size viewer. Do not paste the protected API path as a user link.
+5. After attachment delivery, delete the temporary local file when the client no longer needs it. If image retrieval, attachment, or display fails, state that the actual preview is unavailable and stop the image approval flow. Do not substitute a prompt, placeholder, model output, prior cached URL, or regenerated image.
+6. On an explicit request to refresh an image, run the same helper again with the same returned asset ID and attach the newly retrieved bytes. Refresh is retrieval only. It never approves, regenerates, schedules, publishes, or changes status.
 
 ## Flow: approval
 
@@ -341,7 +360,7 @@ Fields the contract does not list are refused, not ignored. If you believe somet
 
 **A configured `SOCIAL_AGENT_API_KEY` or `SOCIAL_AGENT_API_KEY_FILE` is the provisioning signal.** When one is set, this runtime is an explicitly provisioned controlled pilot and that workspace credential is the way in. Do not run guest onboarding and do not start a sign-in: the workspace already exists, and onboarding it again creates a second empty one whose posts the user will never see. List the projects first and work in the one that is there. When neither is set, this is a normal runtime, so use guest onboarding or sign-in as above and never treat a missing credential as something to work around.
 
-`scripts/social_agent_api.py` and `scripts/scheduling_workflows.py` remain available only for an explicitly provisioned controlled pilot. `scheduling_workflows.py` may use only the authenticated fixed-origin transport in `social_agent_api.py`; it must never call Social Connect/Postiz directly. Neither helper is a fallback for failed or unavailable Handled verification. Never ask for or print the credential. Never call operator bootstrap. If the controlled-pilot credential is absent, stop rather than inventing identifiers or credentials.
+`scripts/social_agent_api.py` is available after either a configured workspace credential or successful private `signin.py` session. It may use only the fixed-origin authenticated transport and the published allowlist. `scripts/scheduling_workflows.py` remains controlled-pilot only and may use only the authenticated fixed-origin transport in `social_agent_api.py`; it must never call Social Connect/Postiz directly. Neither helper is a fallback for failed or unavailable Handled verification. Never ask for or print the credential. Never call operator bootstrap. If neither a controlled-pilot credential nor private sign-in state is available, stop rather than inventing identifiers or credentials.
 
 The controlled-pilot one-time intent command is:
 
