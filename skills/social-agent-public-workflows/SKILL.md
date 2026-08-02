@@ -211,12 +211,15 @@ Use this flow after captions have been displayed and before any image approval. 
 
 1. Read the `list_posts` contract before first use, then submit an allowlisted `list_posts` job for the confirmed project reference and read its completed job status.
 2. Use only a returned asset with `rendered_media` set to `true`, the caption-associated immutable asset ID, and a non-empty preview reference. Never derive a storage path or make an arbitrary authenticated request.
-3. Mint a temporary preview capability with the bundled helper. It is an exact immutable rendered image and is valid for ten minutes. Deliver it immediately through the current Hermes client’s native image or media-URL attachment mechanism. Do not quote it as text, persist it, reuse it after expiry, or resolve it against another origin. Never encode, print, paste, or render image bytes as base64, hexadecimal, a data URL, Markdown text, or a terminal substitute. Do not show the command output, asset ID, storage details, prompt, provider, model, or checksum to the user.
+3. Retrieve the exact immutable rendered image with the bundled helper. In **Handled**, download the authorized rendition to a temporary image file, then return exactly one `MEDIA:/tmp/<image>.jpg` marker so Handled converts it into a structured attachment and renders its native image card. Do not quote any URL, filesystem path, command output, asset ID, storage details, prompt, provider, model, or checksum to the user.
 
 ```bash
-python3 scripts/social_agent_api.py asset-preview-link \
-  --asset-id '<server-returned-asset-id>'
+python3 scripts/social_agent_api.py asset-preview \
+  --asset-id '<server-returned-asset-id>' \
+  --output /tmp/handled-preview.jpg
 ```
+
+Then the assistant response contains only a short review caption plus `MEDIA:/tmp/handled-preview.jpg`.
 4. Pair each attached image with the same numbered caption and state that it is review-only. The native attachment provides the full-size viewer. Do not paste a protected API path as a user link.
 5. If capability minting, attachment, or display fails, including when the current client has no native image-attachment capability, respond with exactly `The actual preview is unavailable.` and stop the image approval flow. Do not substitute a prompt, placeholder, model output, expired URL, regenerated image, encoded bytes, local filename, output path, asset ID, or explanatory detail.
 6. On an explicit request to refresh an image, mint a new capability using the same returned asset ID and attach it immediately. Refresh is retrieval only. It never approves, regenerates, schedules, publishes, or changes status.
