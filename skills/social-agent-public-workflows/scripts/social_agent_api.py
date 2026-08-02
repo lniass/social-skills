@@ -26,7 +26,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import UUID
 
 API_VERSION = "2026-07-01"
-SKILL_VERSION = "0.6.4"
+SKILL_VERSION = "0.6.5"
 DEFAULT_API_BASE_URL = "https://social-agent-api.voicevine.ai"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 MAX_TIMEOUT_SECONDS = 120.0
@@ -580,6 +580,11 @@ def build_parser() -> argparse.ArgumentParser:
     asset_preview = subparsers.add_parser("asset-preview", help="retrieve one authorized rendered image to a private local file")
     asset_preview.add_argument("--asset-id", required=True)
     asset_preview.add_argument("--output", type=Path, required=True)
+    asset_preview_link = subparsers.add_parser(
+        "asset-preview-link",
+        help="mint one short-lived rendered image capability for native attachment delivery",
+    )
+    asset_preview_link.add_argument("--asset-id", required=True)
     return parser
 
 
@@ -609,6 +614,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = request_json("GET", f"/v1/jobs/{quote(args.job_id, safe='')}", timeout=args.timeout)
         elif args.command == "asset-preview":
             result = fetch_asset_preview(args.asset_id, args.output, timeout=args.timeout)
+        elif args.command == "asset-preview-link":
+            asset_id = _validated_asset_id(args.asset_id)
+            result = request_json(
+                "POST", f"/v1/assets/{quote(asset_id, safe='')}/preview-capabilities", timeout=args.timeout
+            )
         else:  # pragma: no cover
             raise SocialAgentAPIError("Unsupported command")
     except SocialAgentAPIError as exc:

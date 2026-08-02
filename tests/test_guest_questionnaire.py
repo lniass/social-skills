@@ -243,7 +243,7 @@ class GuestQuestionnaireTests(unittest.TestCase):
             self.assertEqual(request["path"], "/v1/guest/questionnaire")
             self.assertIsNone(request["authorization"])
             self.assertIsNone(request["resume_token"])
-            self.assertEqual(request["user_agent"], "social-agent-public-workflows-guest/0.6.4")
+            self.assertEqual(request["user_agent"], "social-agent-public-workflows-guest/0.6.5")
 
     def test_resume_reads_private_state_and_sends_only_guest_header(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -132,7 +132,7 @@ class SocialAgentAPITests(unittest.TestCase):
         self.assertEqual(request["method"], "GET")
         self.assertEqual(request["path"], "/v1/capabilities")
         self.assertEqual(request["authorization"], f"Bearer {TEST_KEY}")
-        self.assertEqual(request["user_agent"], "social-agent-public-workflows/0.6.4")
+        self.assertEqual(request["user_agent"], "social-agent-public-workflows/0.6.5")
         self.assertIsNone(request["body"])
 
     def test_create_job_cli_sends_versioned_job_packet(self) -> None:
@@ -167,6 +167,25 @@ class SocialAgentAPITests(unittest.TestCase):
             },
         )
         self.assertEqual(json.loads(stdout.getvalue()), {"ok": True})
+
+    def test_asset_preview_link_mints_capability_with_workspace_bearer_credential(self) -> None:
+        with LocalServer() as base_url, patch.dict(os.environ, local_environment(base_url), clear=True):
+            RecordingHandler.response_body = {
+                "preview_url": "https://social-agent-api.voicevine.ai/v1/asset-previews/cap_example",
+                "expires_at": "2026-08-02T00:10:00+00:00",
+            }
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                exit_code = api.main(["asset-preview-link", "--asset-id", ASSET_ID])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(RecordingHandler.requests[0]["method"], "POST")
+        self.assertEqual(
+            RecordingHandler.requests[0]["path"],
+            f"/v1/assets/{ASSET_ID}/preview-capabilities",
+        )
+        self.assertEqual(RecordingHandler.requests[0]["authorization"], f"Bearer {TEST_KEY}")
+        self.assertEqual(json.loads(stdout.getvalue())["preview_url"], RecordingHandler.response_body["preview_url"])
 
     def test_asset_preview_fetches_private_image_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
