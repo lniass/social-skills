@@ -109,6 +109,9 @@ class RepositoryContractTests(unittest.TestCase):
             "Flow: retrieve and display rendered image previews",
             "submit an allowlisted `list_posts` job",
             "attach that local image through the current client’s native image-attachment capability",
+            "Never encode, print, paste, or render image bytes as base64",
+            "including when the current client has no native image-attachment capability",
+            "respond with exactly `The actual preview is unavailable.`",
             "Refresh is retrieval only.",
             "Require a separate explicit scheduling confirmation after copy and image decisions.",
         )

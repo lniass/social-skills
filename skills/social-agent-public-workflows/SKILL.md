@@ -1,7 +1,7 @@
 ---
 name: social-agent-public-workflows
 description: Write, review, approve, and schedule Facebook posts for a business through the hosted Social Agent service. Use this whenever someone asks for a social media post or caption, wants to see posts already prepared for them, wants to approve or schedule one, wants to connect their Facebook Page, or wants recurring posting set up. Post copy comes from the hosted service and is never written locally. Covers first-time setup through secure Handled verification as well as returning users who already have a project.
-version: 0.6.3
+version: 0.6.4
 author: SimpleTechX / VoiceVine
 license: MIT
 metadata:
@@ -211,16 +211,15 @@ Use this flow after captions have been displayed and before any image approval. 
 
 1. Read the `list_posts` contract before first use, then submit an allowlisted `list_posts` job for the confirmed project reference and read its completed job status.
 2. Use only a returned asset with `rendered_media` set to `true`, the caption-associated immutable asset ID, and a non-empty preview reference. Never derive a storage path or make an arbitrary authenticated request.
-3. Retrieve the actual image with the bundled helper. Give it a private temporary output file, then attach that local image through the current client’s native image-attachment capability. Do not show the output path, command output, asset ID, storage details, prompt, provider, model, or checksum to the user.
+3. Retrieve the actual image with the bundled helper. Give it a private temporary output file, then attach that local image through the current client’s native image-attachment capability. Do not show the output path, command output, asset ID, storage details, prompt, provider, model, or checksum to the user. Never encode, print, paste, or render image bytes as base64, hexadecimal, a data URL, Markdown text, or a terminal substitute.
 
 ```bash
 python3 scripts/social_agent_api.py asset-preview \
   --asset-id '<server-returned-asset-id>' \
   --output '<private-temporary-image-path>'
 ```
-
 4. Pair each attached image with the same numbered caption and state that it is review-only. The native attachment provides the full-size viewer. Do not paste the protected API path as a user link.
-5. After attachment delivery, delete the temporary local file when the client no longer needs it. If image retrieval, attachment, or display fails, state that the actual preview is unavailable and stop the image approval flow. Do not substitute a prompt, placeholder, model output, prior cached URL, or regenerated image.
+5. After attachment delivery, delete the temporary local file when the client no longer needs it. If image retrieval, attachment, or display fails, including when the current client has no native image-attachment capability, respond with exactly `The actual preview is unavailable.` and stop the image approval flow. Do not substitute a prompt, placeholder, model output, prior cached URL, regenerated image, encoded bytes, local filename, output path, asset ID, or explanatory detail.
 6. On an explicit request to refresh an image, run the same helper again with the same returned asset ID and attach the newly retrieved bytes. Refresh is retrieval only. It never approves, regenerates, schedules, publishes, or changes status.
 
 ## Flow: approval

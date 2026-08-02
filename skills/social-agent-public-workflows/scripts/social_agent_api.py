@@ -26,7 +26,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import UUID
 
 API_VERSION = "2026-07-01"
-SKILL_VERSION = "0.6.3"
+SKILL_VERSION = "0.6.4"
 DEFAULT_API_BASE_URL = "https://social-agent-api.voicevine.ai"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 MAX_TIMEOUT_SECONDS = 120.0
