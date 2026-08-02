@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -83,6 +84,33 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertNotIn("Stop unconditionally after questionnaire completion", skill)
         self.assertNotIn("Planned behavior only", skill)
         self.assertNotIn("https://handled.voicevine.ai/pricing", skill)
+
+    def test_skill_version_matches_guest_helper_user_agent(self) -> None:
+        skill = SKILL_PATH.read_text(encoding="utf-8")
+        helper_source = GUEST_HELPER_PATH.read_text(encoding="utf-8")
+        match = re.search(r"^version: ([0-9]+(?:\.[0-9]+)+)$", skill, re.MULTILINE)
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertIn(f'SKILL_VERSION = "{match.group(1)}"', helper_source)
+
+    def test_approval_presentation_requires_visible_copy_assets_and_separate_schedule_consent(self) -> None:
+        skill = SKILL_PATH.read_text(encoding="utf-8")
+        required = (
+            "Present every caption as one separately numbered message before showing a copy gate.",
+            "approve caption [number(s)]",
+            "edit caption [number(s)]",
+            "approve all captions",
+            "A bare approval applies only to the last fully displayed caption.",
+            "Present every required rendered image as one separately numbered preview before showing an image gate.",
+            "approve image(s) [number(s)]",
+            "regenerate image(s) [number(s)]",
+            "approve all images",
+            "A caption decision never approves an image.",
+            "Require a separate explicit scheduling confirmation after copy and image decisions.",
+        )
+        for value in required:
+            with self.subTest(value=value):
+                self.assertIn(value, skill)
 
     def test_direct_facebook_request_cannot_bypass_guest_questionnaire(self) -> None:
         skill = SKILL_PATH.read_text(encoding="utf-8")

@@ -1,7 +1,7 @@
 ---
 name: social-agent-public-workflows
 description: Write, review, approve, and schedule Facebook posts for a business through the hosted Social Agent service. Use this whenever someone asks for a social media post or caption, wants to see posts already prepared for them, wants to approve or schedule one, wants to connect their Facebook Page, or wants recurring posting set up. Post copy comes from the hosted service and is never written locally. Covers first-time setup through secure Handled verification as well as returning users who already have a project.
-version: 0.6.1
+version: 0.6.2
 author: SimpleTechX / VoiceVine
 license: MIT
 metadata:
@@ -189,8 +189,8 @@ Use this only after secure authenticated continuation is available and the hoste
 1. Read hosted recurrence and status.
 2. If recurrence is missing or incomplete, stop. Do not invent settings.
 3. Create content only when hosted state explicitly permits it.
-4. Present the server-returned batch and require explicit approval.
-5. Schedule only approved versions to a trusted verified destination.
+4. Apply the mandatory approval presentation flow before recording any decision.
+5. Schedule only approved versions to a trusted verified destination after separate scheduling consent.
 
 ## Flow: one-time scheduling
 
@@ -206,7 +206,48 @@ Text-only posts may proceed when the approved post version does not require medi
 
 ## Flow: approval
 
-Present server-returned content and approval choices as data. Do not invent options or weaken the approval gate. Do not schedule until approval is explicit and hosted state records it.
+Do not infer that a generic approval covers a batch. Present server-returned content and approval choices as data. Do not invent options or weaken the approval gate.
+
+### 1. Copy review and copy gate
+
+- Present every caption as one separately numbered message before showing a copy gate. Include the full server-returned caption and any associated first comment or link.
+- Keep each displayed number bound to that exact immutable content version. Do not approve, revise, or schedule an item that was not displayed.
+- After the final caption, state the complete displayed scope, for example `Captions shown: 1, 2, 3.`, then send one separate copy gate with only:
+
+```text
+Reply with:
+- approve caption [number(s)]
+- edit caption [number(s)]
+- approve all captions
+```
+
+- Accept `approve all captions` only when it follows that final copy gate in the current review and every listed caption was displayed. It applies only to the enumerated caption set.
+- A bare approval applies only to the last fully displayed caption. Do not expand `I approve`, `approved`, `looks good`, or `all good` to unseen captions or to the entire batch.
+- Submit one `approve_or_reject` operation per explicitly selected exact content version. A caption decision never approves an image.
+
+### 2. Image review and image gate
+
+- Generate or retrieve assets only for captions that are approved when the hosted workflow requires that ordering.
+- Present every required rendered image as one separately numbered preview before showing an image gate. The actual rendered image or a trusted server-returned image preview must be visible. A prompt, asset idea, filename, path, hash, or generated-success message is not an image preview.
+- Use the same item number as the associated caption and state that mapping. Do not approve an image whose actual rendered preview was not shown.
+- After the final image preview, state the complete displayed scope, for example `Images shown: 1, 2, 3.`, then send one separate image gate with only:
+
+```text
+Reply with:
+- approve image(s) [number(s)]
+- regenerate image(s) [number(s)]
+- approve all images
+```
+
+- Accept `approve all images` only when it follows that final image gate in the current review and every listed rendered image was displayed. It applies only to the enumerated image set.
+- A bare approval during image review applies only to the last fully displayed image. Do not expand it to unseen images.
+- Submit one `approve_or_reject` operation per explicitly selected exact asset version. An image decision does not change the caption decision.
+
+### 3. Scheduling gate
+
+- Do not schedule after copy or image approval alone. Require a separate explicit scheduling confirmation after copy and image decisions.
+- Before that confirmation, show the exact approved post numbers, destination display name, timezone-aware date and time for each item, and whether each item is text-only or has its approved image.
+- Submit scheduling only for the exact displayed, approved set after that separate confirmation. `intent_recorded` is not external scheduling or publication success.
 
 ## Failure handling
 
