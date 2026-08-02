@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import contextlib
 import importlib.util
 import io
@@ -132,7 +133,7 @@ class SocialAgentAPITests(unittest.TestCase):
         self.assertEqual(request["method"], "GET")
         self.assertEqual(request["path"], "/v1/capabilities")
         self.assertEqual(request["authorization"], f"Bearer {TEST_KEY}")
-        self.assertEqual(request["user_agent"], "social-agent-public-workflows/0.6.6")
+        self.assertEqual(request["user_agent"], "social-agent-public-workflows/0.6.7")
         self.assertIsNone(request["body"])
 
     def test_create_job_cli_sends_versioned_job_packet(self) -> None:
@@ -186,6 +187,50 @@ class SocialAgentAPITests(unittest.TestCase):
         )
         self.assertEqual(RecordingHandler.requests[0]["authorization"], f"Bearer {TEST_KEY}")
         self.assertEqual(json.loads(stdout.getvalue())["preview_url"], RecordingHandler.response_body["preview_url"])
+
+    def test_upload_visual_sends_validated_private_image(self) -> None:
+        def chunk(chunk_type: bytes, data: bytes) -> bytes:
+            return len(data).to_bytes(4, "big") + chunk_type + data + zlib.crc32(chunk_type + data).to_bytes(4, "big")
+
+        image = (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00")
+            + chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00\x00"))
+            + chunk(b"IEND", b"")
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.png"
+            source.write_bytes(image)
+            with LocalServer() as base_url, patch.dict(os.environ, local_environment(base_url), clear=True):
+                result = api.upload_project_image(
+                    "demo project",
+                    source,
+                    exact_post_media=False,
+                    role="product",
+                    display_name="Demo",
+                    timeout=30,
+                )
+
+        self.assertEqual(result, {"ok": True})
+        request = RecordingHandler.requests[0]
+        self.assertEqual(request["path"], "/v1/projects/demo%20project/visual-assets")
+        body = request["body"]
+        self.assertIsInstance(body, dict)
+        assert isinstance(body, dict)
+        self.assertEqual(body["role"], "product")
+        self.assertEqual(body["display_name"], "Demo")
+        self.assertEqual(base64.b64decode(body["data_base64"]), image)
+
+    def test_upload_rejects_invalid_or_symbolic_image(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "bad.png"
+            source.write_bytes(b"not-an-image")
+            with self.assertRaisesRegex(api.SocialAgentAPIError, "valid PNG"):
+                api._read_upload_image(source)
+            link = Path(directory) / "link.png"
+            link.symlink_to(source)
+            with self.assertRaisesRegex(api.SocialAgentAPIError, "regular file"):
+                api._read_upload_image(link)
 
     def test_asset_preview_fetches_private_image_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

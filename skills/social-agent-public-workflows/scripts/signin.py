@@ -40,7 +40,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-SKILL_VERSION = "0.6.6"
+SKILL_VERSION = "0.6.7"
 DEFAULT_API_BASE_URL = "https://social-agent-api.voicevine.ai"
 CUSTOM_ORIGIN_ENV = "SOCIAL_AGENT_ALLOW_CUSTOM_API_BASE_URL"
 STATE_FILE_ENV = "SOCIAL_AGENT_SIGNIN_STATE_FILE"

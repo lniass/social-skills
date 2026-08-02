@@ -9,6 +9,7 @@ skill.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import math
 import os
@@ -26,12 +27,13 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import UUID
 
 API_VERSION = "2026-07-01"
-SKILL_VERSION = "0.6.6"
+SKILL_VERSION = "0.6.7"
 DEFAULT_API_BASE_URL = "https://social-agent-api.voicevine.ai"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 MAX_TIMEOUT_SECONDS = 120.0
 MAX_RESPONSE_BYTES = 1_048_576
 MAX_ASSET_PREVIEW_BYTES = 25 * 1024 * 1024
+MAX_IMAGE_UPLOAD_BYTES = 25 * 1024 * 1024
 IMAGE_MEDIA_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
 CUSTOM_ORIGIN_ENV = "SOCIAL_AGENT_ALLOW_CUSTOM_API_BASE_URL"
 TRUE_VALUES = {"1", "true", "yes"}
@@ -477,6 +479,54 @@ def _validate_preview_image(media_type: str, payload: bytes) -> None:
         raise SocialAgentAPIError("Social Agent API returned an invalid image preview")
 
 
+def _read_upload_image(path: Path) -> bytes:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise SocialAgentAPIError("Image upload path must be a readable regular file") from exc
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise SocialAgentAPIError("Image upload path must be a readable regular file")
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = -1
+            payload = handle.read(MAX_IMAGE_UPLOAD_BYTES + 1)
+    except OSError as exc:
+        raise SocialAgentAPIError("Could not read image upload") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    if len(payload) > MAX_IMAGE_UPLOAD_BYTES:
+        raise SocialAgentAPIError("Image upload exceeded the safe size limit")
+    if not any(validator(payload) for validator in (_validate_png, _validate_jpeg, _validate_webp)):
+        raise SocialAgentAPIError("Image upload must be a valid PNG, JPEG, or WebP file")
+    return payload
+
+
+def upload_project_image(
+    project_reference_id: str,
+    image_path: Path,
+    *,
+    exact_post_media: bool,
+    role: str,
+    display_name: str | None,
+    timeout: float,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "data_base64": base64.b64encode(_read_upload_image(image_path)).decode("ascii"),
+        "role": role,
+    }
+    if display_name:
+        payload["display_name"] = display_name
+    collection = "post-media" if exact_post_media else "visual-assets"
+    project = quote(project_reference_id, safe="")
+    return request_json("POST", f"/v1/projects/{project}/{collection}", body=payload, timeout=timeout)
+
+
 def _write_private_preview(output: Path, payload: bytes) -> None:
     parent = output.parent
     if not parent.is_dir():
@@ -585,6 +635,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="mint one short-lived rendered image capability for native attachment delivery",
     )
     asset_preview_link.add_argument("--asset-id", required=True)
+    for command, help_text in (
+        ("upload-visual", "upload one private reusable project image"),
+        ("upload-post-media", "upload one exact image for a future post"),
+    ):
+        upload = subparsers.add_parser(command, help=help_text)
+        upload.add_argument("--project-reference-id", required=True)
+        upload.add_argument("--image", type=Path, required=True)
+        upload.add_argument(
+            "--role",
+            choices=("logo", "template", "palette", "product", "product_screenshot", "style_example", "scene", "texture"),
+            default="style_example",
+        )
+        upload.add_argument("--display-name")
+    visual_assets = subparsers.add_parser("visual-assets", help="list reusable project images")
+    visual_assets.add_argument("--project-reference-id", required=True)
+    visual_lifecycle = subparsers.add_parser("visual-lifecycle", help="activate or archive a reviewed reusable image")
+    visual_lifecycle.add_argument("--project-reference-id", required=True)
+    visual_lifecycle.add_argument("--asset-id", required=True)
+    visual_lifecycle.add_argument("--action", choices=("activate", "archive"), required=True)
+    visual_lifecycle.add_argument("--asset-kind", choices=("reference", "background"))
+    post_media = subparsers.add_parser("post-media", help="list exact future-post images")
+    post_media.add_argument("--project-reference-id", required=True)
+    post_media_action = subparsers.add_parser("post-media-action", help="attach or archive exact future-post media")
+    post_media_action.add_argument("--project-reference-id", required=True)
+    post_media_action.add_argument("--asset-id", required=True)
+    post_media_action.add_argument("--action", choices=("attach", "archive"), required=True)
+    post_media_action.add_argument("--content-version-id")
     return parser
 
 
@@ -618,6 +695,42 @@ def main(argv: Sequence[str] | None = None) -> int:
             asset_id = _validated_asset_id(args.asset_id)
             result = request_json(
                 "POST", f"/v1/assets/{quote(asset_id, safe='')}/preview-capabilities", timeout=args.timeout
+            )
+        elif args.command in {"upload-visual", "upload-post-media"}:
+            result = upload_project_image(
+                args.project_reference_id,
+                args.image,
+                exact_post_media=args.command == "upload-post-media",
+                role=args.role,
+                display_name=args.display_name,
+                timeout=args.timeout,
+            )
+        elif args.command in {"visual-assets", "post-media"}:
+            project = quote(args.project_reference_id, safe="")
+            result = request_json("GET", f"/v1/projects/{project}/{args.command}", timeout=args.timeout)
+        elif args.command == "visual-lifecycle":
+            project = quote(args.project_reference_id, safe="")
+            asset_id = _validated_asset_id(args.asset_id)
+            body = {"action": args.action}
+            if args.asset_kind:
+                body["asset_kind"] = args.asset_kind
+            result = request_json(
+                "POST",
+                f"/v1/projects/{project}/visual-assets/{asset_id}/lifecycle",
+                body=body,
+                timeout=args.timeout,
+            )
+        elif args.command == "post-media-action":
+            project = quote(args.project_reference_id, safe="")
+            asset_id = _validated_asset_id(args.asset_id)
+            if args.action == "attach" and not args.content_version_id:
+                raise SocialAgentAPIError("Attaching post media requires a content version ID")
+            body = {"content_version_id": args.content_version_id} if args.action == "attach" else None
+            result = request_json(
+                "POST",
+                f"/v1/projects/{project}/post-media/{asset_id}/{args.action}",
+                body=body,
+                timeout=args.timeout,
             )
         else:  # pragma: no cover
             raise SocialAgentAPIError("Unsupported command")
