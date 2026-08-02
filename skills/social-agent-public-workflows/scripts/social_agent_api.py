@@ -208,20 +208,7 @@ def _read_credential_file(path_value: str) -> str:
             os.close(descriptor)
 
 
-def load_api_key() -> str:
-    credential = os.environ.get("SOCIAL_AGENT_API_KEY", "").strip()
-    if not credential:
-        credential_file = os.environ.get("SOCIAL_AGENT_API_KEY_FILE", "").strip()
-        if credential_file:
-            credential = _read_credential_file(credential_file)
-    if credential:
-        if CREDENTIAL_PATTERN.fullmatch(credential) is None:
-            raise SocialAgentAPIError("The configured Social Agent credential has an invalid format")
-        return credential
-    # No provisioned credential. Fall back to a signed-in user's OAuth token,
-    # read from private state rather than passed in, so a token never has to
-    # travel through an argument, an environment dump, or the conversation.
-    # The API accepts either form on the same routes.
+def _load_signin_access_token() -> str:
     try:
         from signin import SignInError, load_access_token
     except ImportError:  # pragma: no cover - helper always ships alongside
@@ -232,6 +219,26 @@ def load_api_key() -> str:
         return load_access_token()
     except SignInError as exc:
         raise SocialAgentAPIError(str(exc)) from exc
+
+
+def load_api_key(*, allow_signin: bool = True) -> str:
+    credential = os.environ.get("SOCIAL_AGENT_API_KEY", "").strip()
+    if not credential:
+        credential_file = os.environ.get("SOCIAL_AGENT_API_KEY_FILE", "").strip()
+        if credential_file:
+            credential = _read_credential_file(credential_file)
+    if credential:
+        if CREDENTIAL_PATTERN.fullmatch(credential) is None:
+            raise SocialAgentAPIError("The configured Social Agent credential has an invalid format")
+        return credential
+    if not allow_signin:
+        raise SocialAgentAPIError(
+            "Private sign-in credentials may only be used with the production Social Agent API"
+        )
+    # No provisioned credential. Fall back to a signed-in user's OAuth token,
+    # read from private state rather than passed in, so a token never has to
+    # travel through an argument, an environment dump, or the conversation.
+    return _load_signin_access_token()
 
 
 def _read_limited(response: Any) -> bytes:
@@ -317,8 +324,8 @@ def request_json(
     body: dict[str, Any] | None = None,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
-    credential = load_api_key()
     base_url = _validate_api_base_url(os.environ.get("SOCIAL_AGENT_API_BASE_URL", DEFAULT_API_BASE_URL))
+    credential = load_api_key(allow_signin=base_url == DEFAULT_API_BASE_URL)
     url = f"{base_url}/{path.lstrip('/')}"
     encoded_body = None if body is None else json.dumps(body, separators=(",", ":")).encode("utf-8")
     headers = {
@@ -502,8 +509,8 @@ def fetch_asset_preview(asset_id: str, output: Path, *, timeout: float = DEFAULT
     arbitrary URL, so a bearer credential cannot be redirected to another host.
     """
     normalized_id = _validated_asset_id(asset_id)
-    credential = load_api_key()
     base_url = _validate_api_base_url(os.environ.get("SOCIAL_AGENT_API_BASE_URL", DEFAULT_API_BASE_URL))
+    credential = load_api_key(allow_signin=base_url == DEFAULT_API_BASE_URL)
     request = Request(
         f"{base_url}/v1/assets/{normalized_id}/preview",
         headers={

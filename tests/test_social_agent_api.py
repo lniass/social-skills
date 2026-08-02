@@ -228,6 +228,20 @@ class SocialAgentAPITests(unittest.TestCase):
             with self.assertRaisesRegex(api.SocialAgentAPIError, CUSTOM_ENV):
                 api.request_json("GET", "/v1/capabilities")
 
+    def test_private_signin_token_is_refused_for_custom_origin(self) -> None:
+        environment = {
+            "SOCIAL_AGENT_API_BASE_URL": "https://staging.example.com",
+            CUSTOM_ENV: "1",
+        }
+        with patch.dict(os.environ, environment, clear=True), patch.object(
+            api, "_load_signin_access_token", return_value="oauth-private-token"
+        ) as load_signin:
+            with self.assertRaisesRegex(api.SocialAgentAPIError, "only be used with the production"):
+                api.request_json("GET", "/v1/capabilities")
+            with self.assertRaisesRegex(api.SocialAgentAPIError, "only be used with the production"):
+                api.fetch_asset_preview(ASSET_ID, Path("/tmp/unreachable-preview.png"))
+        load_signin.assert_not_called()
+
     def test_public_http_api_url_is_rejected_even_with_override(self) -> None:
         with patch.dict(
             os.environ,
