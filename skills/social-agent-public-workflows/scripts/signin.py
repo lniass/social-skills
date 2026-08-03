@@ -40,7 +40,13 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-SKILL_VERSION = "0.6.7"
+SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+if str(SCRIPT_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIRECTORY))
+
+import skill_updater as _skill_updater  # noqa: E402
+
+SKILL_VERSION = "0.6.8"
 DEFAULT_API_BASE_URL = "https://social-agent-api.voicevine.ai"
 CUSTOM_ORIGIN_ENV = "SOCIAL_AGENT_ALLOW_CUSTOM_API_BASE_URL"
 STATE_FILE_ENV = "SOCIAL_AGENT_SIGNIN_STATE_FILE"
@@ -240,14 +246,17 @@ def _post_json(
 
 def _send(request: Request, *, timeout: float) -> dict[str, Any]:
     opener = build_opener(_NoRedirectHandler())
+    _skill_updater.maybe_update_and_reexec(reason="before_api")
     try:
         with opener.open(request, timeout=timeout) as response:
             payload = response.read(MAX_RESPONSE_BYTES + 1)
     except HTTPError as exc:
+        _skill_updater.maybe_check_after_api_failure(exc)
         # Deliberately drops the body. An OAuth error body can echo the code or
         # the redirect, and nothing here needs it to explain the failure.
         raise SignInError(f"Sign-in request failed with HTTP {exc.code}") from exc
     except URLError as exc:
+        _skill_updater.maybe_check_after_api_failure(exc)
         raise SignInError("Could not reach the sign-in service") from exc
     if len(payload) > MAX_RESPONSE_BYTES:
         raise SignInError("Sign-in response exceeded the safe size limit")

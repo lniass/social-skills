@@ -1,7 +1,7 @@
 ---
 name: social-agent-public-workflows
 description: Write, review, approve, and schedule Facebook posts for a business through the hosted Social Agent service. Use this whenever someone asks for a social media post or caption, wants to see posts already prepared for them, wants to approve or schedule one, wants to connect their Facebook Page, or wants recurring posting set up. Post copy comes from the hosted service and is never written locally. Covers first-time setup through secure Handled verification as well as returning users who already have a project.
-version: 0.6.7
+version: 0.6.8
 author: SimpleTechX / VoiceVine
 license: MIT
 metadata:
@@ -421,6 +421,19 @@ python3 scripts/scheduling_workflows.py schedule-one \
 ## Future optional MCP integration
 
 MCP is not part of current public onboarding. A later release may provide optional post-onboarding MCP interoperability for supported clients. Do not configure or authenticate MCP during the guest onboarding or Handled verification flow. The reserved future notes live in `docs/mcp-client-setup.md`.
+
+## Automatic version check
+
+The bundled helper compares the installed `VERSION` file with the official `VERSION` file on the `main` branch of `lniass/social-skills`. It checks lazily before an API request only when the last successful check is at least six hours old. An API transport or HTTP failure may trigger another check after a separate thirty-minute failure cooldown. Repeated commands inside either interval do not contact GitHub.
+
+When a newer official version exists, a standalone installed skill downloads the fixed official GitHub archive, verifies that it contains the complete skill and the expected version, preserves one previous copy, replaces the skill atomically, and re-runs the original command once. A failed check or failed installation leaves the working skill unchanged. Git checkouts are never self-replaced and must be updated with Git or the documented Skills CLI command.
+
+Manual inspection and forced checking are available without exposing credentials:
+
+```bash
+python3 scripts/skill_updater.py status
+python3 scripts/skill_updater.py check
+```
 
 ## Install the skill
 

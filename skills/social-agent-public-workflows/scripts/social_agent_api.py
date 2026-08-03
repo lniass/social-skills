@@ -26,8 +26,14 @@ from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import UUID
 
+SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+if str(SCRIPT_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIRECTORY))
+
+import skill_updater as _skill_updater  # noqa: E402
+
 API_VERSION = "2026-07-01"
-SKILL_VERSION = "0.6.7"
+SKILL_VERSION = "0.6.8"
 DEFAULT_API_BASE_URL = "https://social-agent-api.voicevine.ai"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 MAX_TIMEOUT_SECONDS = 120.0
@@ -340,10 +346,12 @@ def request_json(
 
     request = Request(url, data=encoded_body, headers=headers, method=method.upper())
     opener = build_opener(_NoRedirectHandler())
+    _skill_updater.maybe_update_and_reexec(reason="before_api")
     try:
         with opener.open(request, timeout=_request_timeout(timeout)) as response:
             response_payload = _read_limited(response)
     except HTTPError as exc:
+        _skill_updater.maybe_check_after_api_failure(exc)
         response_payload = _read_limited(exc)
         server_code, server_message, field_errors = _safe_server_error(response_payload)
         redacted_field_errors = _redact_json(field_errors, credential)
@@ -364,6 +372,7 @@ def request_json(
             field_errors=redacted_field_errors,
         ) from exc
     except URLError as exc:
+        _skill_updater.maybe_check_after_api_failure(exc)
         reason = _redact(str(exc.reason), credential)
         raise SocialAgentAPIError(f"Could not reach the Social Agent API: {reason}") from exc
 

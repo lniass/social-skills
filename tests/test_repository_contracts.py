@@ -91,6 +91,8 @@ class RepositoryContractTests(unittest.TestCase):
         match = re.search(r"^version: ([0-9]+(?:\.[0-9]+)+)$", skill, re.MULTILINE)
         self.assertIsNotNone(match)
         assert match is not None
+        version_file = (SKILL_PATH.parent / "VERSION").read_text(encoding="utf-8").strip()
+        self.assertEqual(version_file, match.group(1))
         self.assertIn(f'SKILL_VERSION = "{match.group(1)}"', helper_source)
 
     def test_approval_presentation_requires_visible_copy_assets_and_separate_schedule_consent(self) -> None:

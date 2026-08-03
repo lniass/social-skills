@@ -26,6 +26,12 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+if str(SCRIPT_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIRECTORY))
+
+import skill_updater as _skill_updater  # noqa: E402
+
 try:
     import fcntl
 except ImportError:  # pragma: no cover - Windows fallback
@@ -37,7 +43,7 @@ except ImportError:  # pragma: no cover - POSIX fallback
     msvcrt = None  # type: ignore[assignment]
 
 API_VERSION = "2026-07-01"
-SKILL_VERSION = "0.6.7"
+SKILL_VERSION = "0.6.8"
 DEFAULT_API_BASE_URL = "https://social-agent-api.voicevine.ai"
 TRUSTED_HANDLED_ORIGIN = "https://handled.voicevine.ai"
 TRUSTED_HANDLED_VERIFICATION_PATH = "/social-agent/verify"
@@ -588,10 +594,12 @@ def _request_json(
 
     request = Request(url, data=encoded_body, headers=headers, method=method.upper())
     opener = build_opener(_NoRedirectHandler())
+    _skill_updater.maybe_update_and_reexec(reason="before_api")
     try:
         with opener.open(request, timeout=_request_timeout(timeout)) as response:
             response_payload = _read_limited(response)
     except HTTPError as exc:
+        _skill_updater.maybe_check_after_api_failure(exc)
         _read_limited(exc)
         if exc.code == 429 and verification_token is not None:
             retry_raw = exc.headers.get("Retry-After", "")
@@ -601,6 +609,7 @@ def _request_json(
                     raise VerificationRateLimited(retry_after) from exc
         raise GuestQuestionnaireError(f"Social Agent API returned HTTP {exc.code}") from exc
     except URLError as exc:
+        _skill_updater.maybe_check_after_api_failure(exc)
         private_token = verification_token or token
         reason = _redact_text(str(exc.reason), private_token)
         raise GuestQuestionnaireError(f"Could not reach the Social Agent API: {reason}") from exc

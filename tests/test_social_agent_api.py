@@ -124,16 +124,21 @@ class SocialAgentAPITests(unittest.TestCase):
         )
 
     def test_capabilities_uses_workspace_bearer_credential(self) -> None:
-        with LocalServer() as base_url, patch.dict(os.environ, local_environment(base_url), clear=True):
+        with (
+            LocalServer() as base_url,
+            patch.dict(os.environ, local_environment(base_url), clear=True),
+            patch.object(api._skill_updater, "maybe_update_and_reexec") as update_check,
+        ):
             result = api.request_json("GET", "/v1/capabilities")
 
+        update_check.assert_called_once_with(reason="before_api")
         self.assertEqual(result, {"ok": True})
         self.assertEqual(len(RecordingHandler.requests), 1)
         request = RecordingHandler.requests[0]
         self.assertEqual(request["method"], "GET")
         self.assertEqual(request["path"], "/v1/capabilities")
         self.assertEqual(request["authorization"], f"Bearer {TEST_KEY}")
-        self.assertEqual(request["user_agent"], "social-agent-public-workflows/0.6.7")
+        self.assertEqual(request["user_agent"], "social-agent-public-workflows/0.6.8")
         self.assertIsNone(request["body"])
 
     def test_create_job_cli_sends_versioned_job_packet(self) -> None:
