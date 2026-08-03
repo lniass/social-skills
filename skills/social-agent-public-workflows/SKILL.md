@@ -1,8 +1,9 @@
 ---
 name: social-agent-public-workflows
 description: Write, review, approve, and schedule Facebook posts for a business through the hosted Social Agent service. Use this whenever someone asks for a social media post or caption, wants to see posts already prepared for them, wants to approve or schedule one, wants to connect their Facebook Page, or wants recurring posting set up. Post copy comes from the hosted service and is never written locally. Covers first-time setup through secure Handled verification as well as returning users who already have a project.
-version: 0.6.8
+version: 0.6.9
 author: SimpleTechX / VoiceVine
+
 license: MIT
 metadata:
   topics:
@@ -304,6 +305,10 @@ Reply with:
 - Accept `approve all images` only when it follows that final image gate in the current review and every listed rendered image was displayed. It applies only to the enumerated image set.
 - A bare approval during image review applies only to the last fully displayed image. Do not expand it to unseen images.
 - Submit one `approve_or_reject` operation per explicitly selected exact asset version. An image decision does not change the caption decision.
+- **How to execute image regeneration when requested (e.g., `regenerate image 1` or style changes):**
+  - **Case A: Post is awaiting approval.** Submit an `approve_or_reject` job for the specific `asset` with `decision="revision_requested"` and your desired changes in `reason`. The server will automatically queue a `create_assets` continuation job to regenerate the image using your reason while preserving the approved caption.
+  - **Case B: Post is already approved, scheduled, or published.** Direct asset rejection is disabled by database state guards. You must submit a post-level revision by calling `create_posts` with `revision_of_content_version_id` set to the previous version UUID, your style instructions in `revision_reason`, and the caption in `previous_caption`. Once approved, the server will copy the caption and trigger a `create_assets` continuation job, extracting your `revision_reason` from metadata to guide the image generator.
+  - **Never call `create_assets` directly.** Standing alone, asset creation is an internal server-only continuation job and does not have a public contract.
 
 ### 3. Scheduling gate
 
