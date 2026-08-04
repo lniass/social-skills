@@ -148,10 +148,11 @@ Do not embed, reconstruct, reorder, or supplement questionnaire wording in this 
 
 Treat an image attached in chat as private input. Never turn its filesystem path into a hosted URL, copy it into a project workspace, or use Shared-Hermes as storage. Use only the attachment path supplied by the agent runtime and the bundled helper.
 
-If intent is absent, present exactly two numbered choices in one message:
+If intent is absent, present exactly three numbered choices in one message:
 
-1. Reusable project visual material, with a recommendation of Reference or Background based on the stated use.
-2. Exact media to remain unchanged for one future post.
+1. Reusable visual library reference (recommends setting as a reference)
+2. Exact future-post media (to bind to one specific post)
+3. Background inspiration (for overall mood, theme, or backdrop guidance)
 
 For natural-language intent, state the understood route and proceed without exposing internal table names. Exact future-post media must never enter the reusable visual library.
 
