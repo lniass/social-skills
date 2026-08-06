@@ -1,7 +1,7 @@
 ---
 name: social-agent-public-workflows
 description: Write, review, approve, and schedule Facebook posts for a business through the hosted Social Agent service. Use this whenever someone asks for a social media post or caption, wants to see posts already prepared for them, wants to approve or schedule one, wants to connect their Facebook Page, or wants recurring posting set up. Post copy comes from the hosted service and is never written locally. Covers first-time setup through secure Handled verification as well as returning users who already have a project.
-version: 0.6.10
+version: 0.6.11
 author: SimpleTechX / VoiceVine
 
 license: MIT
@@ -255,15 +255,15 @@ Use this flow after captions have been displayed and before any image approval. 
 
 1. Read the `list_posts` contract before first use, then submit an allowlisted `list_posts` job for the confirmed project reference and read its completed job status.
 2. Use only a returned asset with `rendered_media` set to `true`, the caption-associated immutable asset ID, and a non-empty preview reference. Never derive a storage path or make an arbitrary authenticated request.
-3. Retrieve the exact immutable rendered image with the bundled helper. In **Handled**, an image request means the user must receive an actual visible image attachment. Never say or imply that images cannot be directly displayed, that the chat is text-only, that the agent is headless, or that the user must open a link. Download the authorized rendition to `/tmp/handled-preview.jpg`, then put `MEDIA:/tmp/handled-preview.jpg` on its own line in the final assistant response. This exact marker is Handled's native image-attachment format and is removed from visible text before Handled renders the embedded image card. The visible response may contain only a short review caption. Never quote any URL, filesystem path, command output, asset ID, storage details, prompt, provider, model, image dimensions, byte size, or checksum to the user.
+3. Retrieve the exact immutable rendered image with the bundled helper. In **Handled**, an image request means the user must receive an actual visible image attachment. Never say or imply that images cannot be directly displayed, that the chat is text-only, that the agent is headless, or that the user must open a link. Download the authorized rendition to a filename unique to that asset ID, `/tmp/handled-image-<first-8-chars-of-asset-id>.jpg` (e.g. `/tmp/handled-image-5cce8217.jpg`), then put `MEDIA:/tmp/handled-image-<first-8-chars-of-asset-id>.jpg` on its own line in the final assistant response. Never reuse a fixed or previously-used filename for a different asset ID — a stale local file at a reused path can be what gets displayed instead of the image just downloaded. This exact marker is Handled's native image-attachment format and is removed from visible text before Handled renders the embedded image card. The visible response may contain only a short review caption. Never quote any URL, filesystem path, command output, asset ID, storage details, prompt, provider, model, image dimensions, byte size, or checksum to the user — the filename is an internal handle only, not something shown in the visible response text.
 
 ```bash
 python3 scripts/social_agent_api.py asset-preview \
   --asset-id '<server-returned-asset-id>' \
-  --output /tmp/handled-preview.jpg
+  --output /tmp/handled-image-<first-8-chars-of-asset-id>.jpg
 ```
 
-Then the assistant response contains only a short review caption plus `MEDIA:/tmp/handled-preview.jpg`.
+Then the assistant response contains only a short review caption plus `MEDIA:/tmp/handled-image-<first-8-chars-of-asset-id>.jpg`.
 4. Pair each attached image with the same numbered caption and state that it is review-only. The native attachment provides the full-size viewer. Do not paste a protected API path as a user link.
 5. If capability minting, attachment, or display fails, including when the current client has no native image-attachment capability, respond with exactly `The actual preview is unavailable.` and stop the image approval flow. Do not substitute a prompt, placeholder, model output, expired URL, regenerated image, encoded bytes, local filename, output path, asset ID, or explanatory detail.
 6. On an explicit request to refresh an image, mint a new capability using the same returned asset ID and attach it immediately. Refresh is retrieval only. It never approves, regenerates, schedules, publishes, or changes status.
