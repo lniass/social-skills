@@ -117,6 +117,7 @@ class SocialAgentAPITests(unittest.TestCase):
                 "create_assets",
                 "list_posts",
                 "approve_or_reject",
+                "regenerate_asset",
                 "connect_destination",
                 "schedule_posts",
                 "check_status",
@@ -138,7 +139,7 @@ class SocialAgentAPITests(unittest.TestCase):
         self.assertEqual(request["method"], "GET")
         self.assertEqual(request["path"], "/v1/capabilities")
         self.assertEqual(request["authorization"], f"Bearer {TEST_KEY}")
-        self.assertEqual(request["user_agent"], "social-agent-public-workflows/0.6.11")
+        self.assertEqual(request["user_agent"], "social-agent-public-workflows/0.6.12")
         self.assertIsNone(request["body"])
 
     def test_create_job_cli_sends_versioned_job_packet(self) -> None:
