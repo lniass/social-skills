@@ -130,9 +130,38 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn("Before the hosted guest questionnaire is complete, never:", skill)
         self.assertIn("Composio, Facebook, Meta, or other provider OAuth connection link", skill)
         self.assertIn("invoke a Composio tool or any non-Social-Agent connector", skill)
-        self.assertIn("First run the restricted guest questionnaire helper", skill)
+        self.assertIn("Run the restricted guest questionnaire helper", skill)
+        self.assertIn("only after the check above lands on a genuinely new user", skill)
         self.assertIn("only when the user asks to schedule", skill)
         self.assertIn("Present the server-returned destination link as **Social Connect**, never as Composio", skill)
+
+    def test_returning_identity_lists_projects_before_onboarding(self) -> None:
+        # A fresh runtime (e.g. a destroyed-and-recreated Agent37 instance)
+        # has no local memory of a prior session even when its credential's
+        # workspace already has a project. This is the mandatory check that
+        # must run before guest onboarding ever starts, and the exact wording
+        # for each of its three outcomes.
+        skill = SKILL_PATH.read_text(encoding="utf-8")
+        self.assertIn(
+            "Check whether this user already has a project before onboarding "
+            "anything, at the very start of every fresh session.",
+            skill,
+        )
+        self.assertIn(
+            "run `python3 scripts/social_agent_api.py projects` and present "
+            "its outcome exactly as described in Presenting connected projects",
+            skill,
+        )
+        self.assertIn("A failed `projects` call is not evidence of a new user", skill)
+        self.assertIn("Here is the list of connected social media accounts:", skill)
+        self.assertIn("Your workspace is empty.", skill)
+        self.assertIn("No workspace found.", skill)
+        self.assertIn("Do not start onboarding after this list.", skill)
+        self.assertIn(
+            "A failed call here (network, timeout, or server error) is never "
+            "grounds to conclude no workspace exists",
+            skill,
+        )
 
     def test_mcp_commands_are_future_only_and_absent_from_active_skill(self) -> None:
         skill = SKILL_PATH.read_text(encoding="utf-8")
