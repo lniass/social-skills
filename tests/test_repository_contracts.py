@@ -144,24 +144,29 @@ class RepositoryContractTests(unittest.TestCase):
         skill = SKILL_PATH.read_text(encoding="utf-8")
         self.assertIn(
             "Check whether this user already has a project before onboarding "
-            "anything, at the very start of every fresh session.",
+            "anything, at the very start of every fresh session, as the "
+            "literal first command run.",
             skill,
         )
         self.assertIn(
-            "run `python3 scripts/social_agent_api.py projects` and present "
-            "its outcome exactly as described in Presenting connected projects",
+            "Do not reason about whether `SOCIAL_AGENT_API_KEY` or "
+            "`SOCIAL_AGENT_API_KEY_FILE` looks configured, and do not "
+            "narrate a conclusion about sign-in state, before running a "
+            "command",
             skill,
         )
-        self.assertIn("A failed `projects` call is not evidence of a new user", skill)
+        self.assertIn(
+            "Run `python3 scripts/social_agent_api.py projects` first, "
+            "before installation follow-up, before signin.py, before the "
+            "guest questionnaire helper touches anything",
+            skill,
+        )
+        self.assertIn("```text\n   Not signed in; run `signin start`\n   ```", skill)
+        self.assertIn("Any other failure is not evidence of a new user", skill)
         self.assertIn("Here is the list of connected social media accounts:", skill)
         self.assertIn("Your workspace is empty.", skill)
         self.assertIn("No workspace found.", skill)
         self.assertIn("Do not start onboarding after this list.", skill)
-        self.assertIn(
-            "A failed call here (network, timeout, or server error) is never "
-            "grounds to conclude no workspace exists",
-            skill,
-        )
 
     def test_mcp_commands_are_future_only_and_absent_from_active_skill(self) -> None:
         skill = SKILL_PATH.read_text(encoding="utf-8")

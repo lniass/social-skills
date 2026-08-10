@@ -49,12 +49,19 @@ Before the hosted guest questionnaire is complete, never:
 - invoke a Composio tool or any non-Social-Agent connector;
 - claim a Page is connected or ask the user to authorize one.
 
-**Check whether this user already has a project before onboarding anything, at the very start of every fresh session.** A fresh runtime has no local memory of a prior session, even for a workspace that already has a project — the absence of local memory is never proof of a new user. Run this check before the restricted guest questionnaire helper touches anything:
+**Check whether this user already has a project before onboarding anything, at the very start of every fresh session, as the literal first command run.** A fresh runtime has no local memory of a prior session, even for a workspace that already has a project — the absence of local memory is never proof of a new user, and neither is a busy first turn that just finished installing or loading this skill. Do not reason about whether `SOCIAL_AGENT_API_KEY` or `SOCIAL_AGENT_API_KEY_FILE` looks configured, and do not narrate a conclusion about sign-in state, before running a command — a judgment formed without running anything is exactly how a configured credential gets reported as missing. Run `python3 scripts/social_agent_api.py projects` first, before installation follow-up, before signin.py, before the guest questionnaire helper touches anything, and act only on its actual output:
 
-1. If neither `SOCIAL_AGENT_API_KEY` nor `SOCIAL_AGENT_API_KEY_FILE` is configured, run `python3 scripts/signin.py status`. If it does not report `signed_in`, and the user does not say they have used this before, there is nothing to check identity against: send exactly `No workspace found.`, then go straight to guest-first onboarding below.
-2. If a credential is configured, or `signin.py status` reports `signed_in`, or the user says they have used this before, sign in when not already signed in, then run `python3 scripts/social_agent_api.py projects` and present its outcome exactly as described in Presenting connected projects before offering or starting onboarding. A failed `projects` call is not evidence of a new user — follow Presenting connected projects rather than falling back to onboarding on a guess.
+1. If it succeeds, present its outcome exactly as described in Presenting connected projects, before offering or starting onboarding.
+2. If it fails with exactly this message, there is genuinely no configured credential and no signed-in session:
 
-Their project, cadence, connected Page, and prepared posts already exist and onboarding cannot reach them. Onboarding is for genuinely new users only, entered only per step 1 above, or when step 2's `projects` call succeeds and confirms an existing workspace with no projects.
+   ```text
+   Not signed in; run `signin start`
+   ```
+
+   If the user says they have used this before, run `python3 scripts/signin.py start`, sign in, then run `python3 scripts/social_agent_api.py projects` again and go to step 1. Otherwise send exactly `No workspace found.`, then go straight to guest-first onboarding below.
+3. Any other failure is not evidence of a new user. Follow Failure handling below: stop and preserve state rather than guessing, and never fall through to onboarding on it.
+
+Their project, cadence, connected Page, and prepared posts already exist and onboarding cannot reach them. Onboarding is for genuinely new users only, entered only per step 2 above, or when step 1's `projects` call succeeds and confirms an existing workspace with no projects.
 
 Note that `registered` is not `signed_in`. A stored client registration proves nothing; only a token signs a user in.
 
@@ -62,11 +69,11 @@ Run the restricted guest questionnaire helper and present one server-returned qu
 
 ## Presenting connected projects
 
-`python3 scripts/social_agent_api.py projects` returns each project's `display_name` and its `destinations`, an array of `{platform, display_name, status}` describing that project's connected accounts. Map each returned `platform` to a short display label: `facebook` becomes `FB`. A platform value not yet in this mapping displays capitalized exactly as returned, so the format degrades safely as new platforms ship.
+This describes the outcome of the `python3 scripts/social_agent_api.py projects` call from Mandatory ordering and connection boundary above, run as the literal first command of the session. Its `Not signed in` failure and every other failure are handled there, in steps 2 and 3 — this section covers only what to do once that call has actually succeeded.
 
-A failed call here (network, timeout, or server error) is never grounds to conclude no workspace exists, since step 2 already established a credential or a signed-in session, so a workspace exists. Follow Failure handling below instead: stop and preserve state rather than guessing, and never fall through to onboarding on a failure.
+It returns each project's `display_name` and its `destinations`, an array of `{platform, display_name, status}` describing that project's connected accounts. Map each returned `platform` to a short display label: `facebook` becomes `FB`. A platform value not yet in this mapping displays capitalized exactly as returned, so the format degrades safely as new platforms ship.
 
-If the call succeeds and returns zero projects, send exactly:
+If it returns zero projects, send exactly:
 
 > Your workspace is empty.
 
@@ -435,7 +442,7 @@ Fields the contract does not list are refused, not ignored. If you believe somet
 
 ## Controlled-pilot helpers
 
-**A configured `SOCIAL_AGENT_API_KEY` or `SOCIAL_AGENT_API_KEY_FILE` is the provisioning signal.** Per Mandatory ordering and connection boundary above, this check runs first, before anything else, in every fresh session — never only when a post or job workflow is already underway. When one is set, this runtime is an explicitly provisioned controlled pilot and that workspace credential is the way in. Do not run guest onboarding and do not start a sign-in: the workspace already exists, and onboarding it again creates a second empty one whose posts the user will never see. List the projects first, present them per Presenting connected projects, and work in the one that is there. When neither is set, this is a normal runtime, so use guest onboarding or sign-in as above and never treat a missing credential as something to work around.
+**A configured `SOCIAL_AGENT_API_KEY` or `SOCIAL_AGENT_API_KEY_FILE` is the provisioning signal.** Per Mandatory ordering and connection boundary above, `python3 scripts/social_agent_api.py projects` is the literal first command of every fresh session — never something reasoned about, and never only run once a post or job workflow is already underway. When it succeeds, this runtime is an explicitly provisioned controlled pilot or a signed-in return visit, and that workspace credential is the way in. Do not run guest onboarding and do not start a sign-in: the workspace already exists, and onboarding it again creates a second empty one whose posts the user will never see. List the projects first, present them per Presenting connected projects, and work in the one that is there. Only its exact `Not signed in` failure, for a user who has not said they used this before, means guest onboarding or sign-in is the normal next step — never a missing credential assumed without running the command.
 
 `scripts/social_agent_api.py` is available after either a configured workspace credential or successful private `signin.py` session. It may use only the fixed-origin authenticated transport and the published allowlist. `scripts/scheduling_workflows.py` remains controlled-pilot only and may use only the authenticated fixed-origin transport in `social_agent_api.py`; it must never call Social Connect/Postiz directly. Neither helper is a fallback for failed or unavailable Handled verification. Never ask for or print the credential. Never call operator bootstrap. If neither a controlled-pilot credential nor private sign-in state is available, stop rather than inventing identifiers or credentials.
 
