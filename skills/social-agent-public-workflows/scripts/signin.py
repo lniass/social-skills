@@ -46,7 +46,7 @@ if str(SCRIPT_DIRECTORY) not in sys.path:
 
 import skill_updater as _skill_updater  # noqa: E402
 
-SKILL_VERSION = "0.6.13"
+SKILL_VERSION = "0.6.14"
 DEFAULT_API_BASE_URL = "https://social-agent-api.voicevine.ai"
 CUSTOM_ORIGIN_ENV = "SOCIAL_AGENT_ALLOW_CUSTOM_API_BASE_URL"
 STATE_FILE_ENV = "SOCIAL_AGENT_SIGNIN_STATE_FILE"
