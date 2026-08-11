@@ -1,7 +1,7 @@
 ---
 name: social-agent-public-workflows
 description: Write, review, approve, and schedule Facebook posts for a business through the hosted Social Agent service. Use this whenever someone asks for a social media post or caption, wants to see posts already prepared for them, wants to approve or schedule one, wants to connect their Facebook Page, or wants recurring posting set up. Post copy comes from the hosted service and is never written locally. Covers first-time setup through secure Handled verification as well as returning users who already have a project.
-version: 0.6.15
+version: 0.6.17
 author: SimpleTechX / VoiceVine
 
 license: MIT
@@ -276,7 +276,7 @@ Use this only after secure authenticated continuation is available and the hoste
 
 ## Flow: check pending notifications
 
-Use when the user asks something like "anything pending?" or "any posts waiting for me?", or at the start of a session for a project with active recurrence. There is no background delivery into this conversation — see the notification platform plan (`handled` repo, `docs/plans/2026-08-10-notification-platform-plan.md`) for why: only Handled's push/email/in-app inbox and, for `recurrence_approval_ready` specifically, a direct wake-and-tell of the current Agent37 chat, are the durable channels. This flow is the pull side for exactly this conversation.
+Use when the user asks whether anything is pending or whether posts are waiting, or at the start of a session for a project with active recurrence. There is no background delivery into this conversation — see the notification platform plan (`handled` repo, `docs/plans/2026-08-10-notification-platform-plan.md`) for why: only Handled's push/email/in-app inbox and, for `recurrence_approval_ready` specifically, a direct wake-and-tell of the current Agent37 chat, are the durable channels. This flow is the pull side for exactly this conversation.
 
 1. Submit an allowlisted `list_notifications` job for the confirmed project reference.
 2. If it returns any events, summarize plainly (e.g. "you have N draft posts ready for review") and offer to fetch them — call `list_schedule` or `list_posts` for the exact project to show what is waiting, then follow the mandatory approval presentation flow before recording any decision.
@@ -319,7 +319,7 @@ Do not infer that a generic approval covers a batch. Present server-returned con
 
 ### 1. Copy review and copy gate
 
-- Present every caption as one separately numbered message before showing a copy gate. Include the full server-returned caption and any associated first comment or link.
+- Present every caption as one separately numbered message before showing a copy gate. Include the full server-returned subject, angle, caption, novelty reason, selected reference display names, and exact text overlays when those fields are present. Include any associated first comment or link.
 - Keep each displayed number bound to that exact immutable content version. Do not approve, revise, or schedule an item that was not displayed.
 - After the final caption, state the complete displayed scope, for example `Captions shown: 1, 2, 3.`, then send one separate copy gate with only:
 
@@ -333,6 +333,7 @@ Reply with:
 - Accept `approve all captions` only when it follows that final copy gate in the current review and every listed caption was displayed. It applies only to the enumerated caption set.
 - A bare approval applies only to the last fully displayed caption. Do not expand `I approve`, `approved`, `looks good`, or `all good` to unseen captions or to the entire batch.
 - Submit one `approve_or_reject` operation per explicitly selected exact content version. A caption decision never approves an image.
+- For an edit, submit `decision=revision_requested`, preserve the user's bounded feedback in `reason`, set `feedback_category` to the closest server-supported field, keep `feedback_scope=revision_only` unless the user explicitly asks for a future preference, and use only these canonical `requested_fields`: `subject`, `angle`, `caption`, `cta`, `text_overlay`, `visual_reference`, `visual_style`, `claim`, `format`, `strategy`. Use singular `text_overlay` even though returned creative JSON contains `text_overlays`. Never silently turn a one-post edit into a standing rule.
 
 ### 2. Image review and image gate
 
