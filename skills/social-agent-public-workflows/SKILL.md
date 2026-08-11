@@ -1,7 +1,7 @@
 ---
 name: social-agent-public-workflows
 description: Write, review, approve, and schedule Facebook posts for a business through the hosted Social Agent service. Use this whenever someone asks for a social media post or caption, wants to see posts already prepared for them, wants to approve or schedule one, wants to connect their Facebook Page, or wants recurring posting set up. Post copy comes from the hosted service and is never written locally. Covers first-time setup through secure Handled verification as well as returning users who already have a project.
-version: 0.6.14
+version: 0.6.15
 author: SimpleTechX / VoiceVine
 
 license: MIT
@@ -245,6 +245,7 @@ get_recurrence
 create_posts
 create_assets
 list_posts
+list_notifications
 approve_or_reject
 connect_destination
 schedule_posts
@@ -272,6 +273,14 @@ Use this only after secure authenticated continuation is available and the hoste
 3. Create content only when hosted state explicitly permits it.
 4. Apply the mandatory approval presentation flow before recording any decision.
 5. Schedule only approved versions to a trusted verified destination after separate scheduling consent.
+
+## Flow: check pending notifications
+
+Use when the user asks something like "anything pending?" or "any posts waiting for me?", or at the start of a session for a project with active recurrence. There is no background delivery into this conversation — see the notification platform plan (`handled` repo, `docs/plans/2026-08-10-notification-platform-plan.md`) for why: only Handled's push/email/in-app inbox and, for `recurrence_approval_ready` specifically, a direct wake-and-tell of the current Agent37 chat, are the durable channels. This flow is the pull side for exactly this conversation.
+
+1. Submit an allowlisted `list_notifications` job for the confirmed project reference.
+2. If it returns any events, summarize plainly (e.g. "you have N draft posts ready for review") and offer to fetch them — call `list_schedule` or `list_posts` for the exact project to show what is waiting, then follow the mandatory approval presentation flow before recording any decision.
+3. If it returns nothing, say so plainly. Do not imply older, already-handled notifications are still open.
 
 ## Flow: one-time scheduling
 
