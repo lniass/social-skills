@@ -1,7 +1,7 @@
 ---
 name: social-agent-public-workflows
 description: Write, review, approve, and schedule Facebook posts for a business through the hosted Social Agent service. Use this whenever someone asks for a social media post or caption, wants to see posts already prepared for them, wants to approve or schedule one, wants to connect their Facebook Page, or wants recurring posting set up. Post copy comes from the hosted service and is never written locally. Covers first-time setup through secure Handled verification as well as returning users who already have a project.
-version: 0.6.18
+version: 0.6.19
 author: SimpleTechX / VoiceVine
 
 license: MIT
@@ -297,6 +297,20 @@ python3 scripts/social_agent_api.py create-job --job-type update_project_context
   --project-reference-id PROJECT_SLUG --idempotency-key '<stable-operation-key>' \
   --inputs-json '{"profile_type":"visual_rules","content":{"palette":"...","typography":"...","imagery_rules":"...","avoid":"..."}}'
 ```
+
+### Deriving visual_rules from an already-uploaded reference image
+
+Use this when the standing instruction points at a specific reference image rather than describing a palette directly in words — "from now on, use the visual style of the karaoke reference," "match our reference image's colors going forward." This works even when that image was uploaded and activated in a past session: reference images are project state, not session state, and are retrievable regardless of which session uploaded them.
+
+1. List the project's reference images:
+
+   ```bash
+   python3 scripts/social_agent_api.py visual-assets --project-reference-id PROJECT_SLUG
+   ```
+
+2. Match the user's description against every returned asset with `status` `active`, using its `display_name`, `vision_description`, and `visual_tags`. If more than one active asset plausibly matches, or none clearly does, ask the user to identify it rather than guessing — never derive a standing palette from the wrong image.
+3. Build the `content` object from that asset's own `vision_description` and, when present, its `visual_analysis.reference_treatment` — never invent or paraphrase a palette from general impression. `reference_treatment` already states, for that specific image, what to carry forward (palette, composition, energy) and what not to copy (its literal subject matter); ground `content.palette` and `content.imagery_rules` in that language rather than composing new wording.
+4. Present the derived `content` to the user in plain language before submitting — this still replaces the whole profile (step 4 above), so confirm it matches what they meant before calling `update_project_context`, the same as any other value in this flow.
 
 ## Flow: recurrent posting
 
