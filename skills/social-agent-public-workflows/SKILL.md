@@ -1,7 +1,7 @@
 ---
 name: social-agent-public-workflows
 description: Write, review, approve, and schedule Facebook posts for a business through the hosted Social Agent service. Use this whenever someone asks for a social media post or caption, wants to see posts already prepared for them, wants to approve or schedule one, wants to connect their Facebook Page, or wants recurring posting set up. Post copy comes from the hosted service and is never written locally. Covers first-time setup through secure Handled verification as well as returning users who already have a project.
-version: 0.6.17
+version: 0.6.18
 author: SimpleTechX / VoiceVine
 
 license: MIT
@@ -38,6 +38,14 @@ This skill defines agent behavior only:
 - require provider-confirmed entitlement and explicit browser approval before claim
 - continue only from server-confirmed state
 - require explicit approval before scheduling
+
+## Communication style
+
+Work through internal steps silently. Submitting a job, polling for its completion, listing posts to check status, waiting and re-checking, and downloading a preview are all internal mechanics, not something to narrate. Do not send a message that only announces an intent to do the next internal step (`Let me submit the approval.`, `Let me check the status.`, `Let me wait a bit longer.`) — perform the step and continue silently instead.
+
+Send exactly one assistant-visible message per user turn, once processing reaches the next thing the user actually needs: a gate, a required question, or a terminal result. Do not send a stream of progress updates for one user action. A user who says `approve` and is waiting for their image should see one message containing that image and the image gate — not a message recording that the approval was received, then a separate message about checking generation status, then the image.
+
+Never quote a URL, filesystem path, command output, job name, job status field, content version id, content item id, content hash, asset id, storage detail, prompt, provider, model, image dimensions, byte size, or checksum to the user. These are internal handles for this skill's own bookkeeping, not information the user asked for. This applies everywhere in this skill, not only during image review — see Flow: retrieve and display rendered image previews for the strictest instance of it.
 
 ## Mandatory ordering and connection boundary
 
@@ -254,7 +262,9 @@ check_status
 
 Never invoke credential issuance, user impersonation, raw SQL, arbitrary requests, secret access, operator bootstrap, workspace administration, or unrestricted execution. Never paste a guest resume token or verification polling credential into a tool argument, URL, prompt, log, or conversation.
 
-## Flow: update project
+## Flow: update project (guided questionnaire fields)
+
+Use this for a project field that the questionnaire itself owns (e.g. positioning, audience, cadence) — not for brand palette, typography, imagery rules, brand voice, or content pillars, which are a different mechanism covered next.
 
 1. Read the current hosted update step.
 2. Ask only the server-returned update question.
@@ -263,6 +273,30 @@ Never invoke credential issuance, user impersonation, raw SQL, arbitrary request
 5. Summarize only server-confirmed changes.
 
 Hosted state remains the source of truth.
+
+## Flow: update visual style and other standing profiles
+
+Use this when the user gives a standing instruction about a project's brand palette, typography, imagery rules, brand voice, or content pillars — phrased as a lasting preference ("from now on...", "always use...", "our brand voice should be...") rather than a one-off note about a single post. A one-off note about a single post belongs in that post's own revision instead (Copy review and copy gate, or `regenerate_asset`'s `reason`) — never write a standing profile change for something the user only wanted for one post.
+
+This is `update_project_context`, a different mechanism from the guided update flow above: it replaces one whole profile in a single call, outside the questionnaire, and takes effect starting with the next batch generated after the call. Posts already generated keep the context they were approved under.
+
+1. Read the contract before first use, and every time this flow runs after a version-check update, the same discipline as any other contract read in this skill:
+
+   ```bash
+   python3 scripts/social_agent_api.py job-contracts --job-type update_project_context
+   ```
+
+   Its `notes` name the exact keys each `profile_type` accepts — do not guess a key name or invent one, and do not carry a shape forward from a previous session without re-reading it.
+2. Confirm which `profile_type` the user's instruction targets (most often `visual_rules` for anything about colors, look, or imagery). If ambiguous, ask rather than guess.
+3. Submit `update_project_context` with that `profile_type` and a `content` object built only from the contract's documented keys for it.
+4. This is a full replace, not a merge, and there is currently no way to read a profile's existing content back before overwriting it. If the user is changing only part of an existing profile (e.g. only the palette, not the typography or imagery rules) and has not stated the other fields in this conversation, say plainly that this update will replace the whole profile and ask the user to state the complete set of values, rather than guessing at or silently dropping a value they set previously.
+5. Confirm back to the user in plain language what changed, without quoting the job type, field names, or raw JSON.
+
+```bash
+python3 scripts/social_agent_api.py create-job --job-type update_project_context \
+  --project-reference-id PROJECT_SLUG --idempotency-key '<stable-operation-key>' \
+  --inputs-json '{"profile_type":"visual_rules","content":{"palette":"...","typography":"...","imagery_rules":"...","avoid":"..."}}'
+```
 
 ## Flow: recurrent posting
 
@@ -300,7 +334,7 @@ Use this flow after captions have been displayed and before any image approval. 
 
 1. Read the `list_posts` contract before first use, then submit an allowlisted `list_posts` job for the confirmed project reference and read its completed job status.
 2. Use only a returned asset with `rendered_media` set to `true`, the caption-associated immutable asset ID, and a non-empty preview reference. Never derive a storage path or make an arbitrary authenticated request.
-3. Retrieve the exact immutable rendered image with the bundled helper. In **Handled**, an image request means the user must receive an actual visible image attachment. Never say or imply that images cannot be directly displayed, that the chat is text-only, that the agent is headless, or that the user must open a link. Download the authorized rendition to a filename unique to that asset ID, `/tmp/handled-image-<first-8-chars-of-asset-id>.jpg` (e.g. `/tmp/handled-image-5cce8217.jpg`), then put `MEDIA:/tmp/handled-image-<first-8-chars-of-asset-id>.jpg` on its own line in the final assistant response. Never reuse a fixed or previously-used filename for a different asset ID — a stale local file at a reused path can be what gets displayed instead of the image just downloaded. This exact marker is Handled's native image-attachment format and is removed from visible text before Handled renders the embedded image card. The visible response may contain only a short review caption. Never quote any URL, filesystem path, command output, asset ID, storage details, prompt, provider, model, image dimensions, byte size, or checksum to the user — the filename is an internal handle only, not something shown in the visible response text.
+3. Retrieve the exact immutable rendered image with the bundled helper. In **Handled**, an image request means the user must receive an actual visible image attachment. Never say or imply that images cannot be directly displayed, that the chat is text-only, that the agent is headless, or that the user must open a link. Download the authorized rendition to a filename unique to that asset ID, `/tmp/handled-image-<first-8-chars-of-asset-id>.jpg` (e.g. `/tmp/handled-image-5cce8217.jpg`), then put `MEDIA:/tmp/handled-image-<first-8-chars-of-asset-id>.jpg` on its own line in the final assistant response. Never reuse a fixed or previously-used filename for a different asset ID — a stale local file at a reused path can be what gets displayed instead of the image just downloaded. This exact marker is Handled's native image-attachment format and is removed from visible text before Handled renders the embedded image card. The visible response may contain only a short review caption — see Communication style; the filename is an internal handle only, never shown in the visible response text.
 
 ```bash
 python3 scripts/social_agent_api.py asset-preview \
