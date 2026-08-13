@@ -35,7 +35,18 @@ Recurring publication must reuse the one-time publication path and must not bypa
 - Shared private capability and HTTP handling may be reused internally, but secrets must never enter chat, prompts, generic tool arguments, logs, or redirects.
 - On `JOB_INPUT_CONTRACT_VIOLATION`, the helper must expose only the server's safe message and allowlisted field-error keys, then fetch and print the exact contract for that job type. Do not leave an agent to guess another payload.
 - Before pushing helper or skill behavior to `main`, review the diff, fix findings, run the orchestrator's relevant real-agent simulation against this checkout, and rerun it after any simulation-driven fix. This public repository has no separate production branch; production promotion belongs to the orchestrator release.
-- Update helper commands, skill instructions, repository contracts, install completeness checks, and hosted API tests together.
+- Update helper commands, skill instructions, reference files, repository contracts, install completeness checks, and hosted API tests together.
+
+## Skill size and progressive disclosure
+
+Per Anthropic's Agent Skills guidance ([overview](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview), [best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices)):
+
+- Keep `SKILL.md`'s body under 500 lines (roughly 5,000 tokens). Claude loads the whole body into context the moment the skill triggers, so every line in it is a standing cost paid on every session that uses this skill, not a one-time one.
+- When a workflow is occasional rather than part of the core create → approve → schedule path, move it to a `reference/*.md` file linked from `SKILL.md`, not into a second top-level skill. This skill's flows share bootstrap, auth, and project-resolution state across every path a user might take in one conversation; splitting into separate skills would fragment that state or duplicate the bootstrap logic in each one, where a reference file keeps it in one place while still keeping unused detail out of context until a task actually needs it.
+- Keep reference files one level deep from `SKILL.md`: a reference file may point back to a `SKILL.md` section by name, but must never point to another reference file. Claude may only partially read a file reached through a second hop, which can silently truncate what it sees.
+- Give any reference file over 100 lines a short contents note at the top.
+
+Current split: `SKILL.md` holds the happy path (bootstrap check, onboarding, create → approve → schedule). `reference/visual-assets.md` (user-supplied images), `reference/updating-project-settings.md` (standing profile changes, including deriving one from a reference image), and `reference/installation.md` (packaging/version-check mechanics, not agent behavior) hold everything else.
 
 ## The server owns every question
 

@@ -12,6 +12,9 @@ GUEST_HELPER_PATH = ROOT / "skills" / "social-agent-public-workflows" / "scripts
 POST_HELPER_PATH = ROOT / "skills" / "social-agent-public-workflows" / "scripts" / "post_workflows.py"
 SCHEDULING_HELPER_PATH = ROOT / "skills" / "social-agent-public-workflows" / "scripts" / "scheduling_workflows.py"
 MCP_SETUP_PATH = ROOT / "docs" / "mcp-client-setup.md"
+INSTALLATION_REFERENCE_PATH = (
+    ROOT / "skills" / "social-agent-public-workflows" / "reference" / "installation.md"
+)
 
 
 class RepositoryContractTests(unittest.TestCase):
@@ -56,12 +59,18 @@ class RepositoryContractTests(unittest.TestCase):
     def test_install_documentation_preserves_helper(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         skill = SKILL_PATH.read_text(encoding="utf-8")
+        installation_reference = INSTALLATION_REFERENCE_PATH.read_text(encoding="utf-8")
         raw_install = "hermes skills install https://raw.githubusercontent.com"
         self.assertNotIn(raw_install, readme)
         self.assertNotIn(raw_install, skill)
+        self.assertNotIn(raw_install, installation_reference)
         mirror_install = "rsync -a --delete social-skills/skills/social-agent-public-workflows/"
         self.assertIn(mirror_install, readme)
-        self.assertIn(mirror_install, skill)
+        # Install steps live in reference/installation.md, one hop from
+        # SKILL.md (progressive disclosure) -- SKILL.md must still point to
+        # it, but the commands themselves are asserted there, not here.
+        self.assertIn("reference/installation.md", skill)
+        self.assertIn(mirror_install, installation_reference)
         self.assertIn("npx -y skills@latest add lniass/social-skills", readme)
         self.assertIn("npx -y skills@latest update social-agent-public-workflows -y", readme)
         self.assertTrue(AUTH_HELPER_PATH.is_file())

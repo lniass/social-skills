@@ -1,7 +1,7 @@
 ---
 name: social-agent-public-workflows
 description: Write, review, approve, and schedule Facebook posts for a business through the hosted Social Agent service. Use this whenever someone asks for a social media post or caption, wants to see posts already prepared for them, wants to approve or schedule one, wants to connect their Facebook Page, or wants recurring posting set up. Post copy comes from the hosted service and is never written locally. Covers first-time setup through secure Handled verification as well as returning users who already have a project.
-version: 0.6.19
+version: 0.6.20
 author: SimpleTechX / VoiceVine
 
 license: MIT
@@ -188,48 +188,7 @@ Do not embed, reconstruct, reorder, or supplement questionnaire wording in this 
 
 ## Allowed product workflow surface
 
-## Flow: user-supplied project images
-
-Treat an image attached in chat as private input. Never turn its filesystem path into a hosted URL, copy it into a project workspace, or use Shared-Hermes as storage. Use only the attachment path supplied by the agent runtime and the bundled helper.
-
-If intent is absent, present exactly three numbered choices in one message:
-
-1. Reusable visual library reference (recommends setting as a reference)
-2. Exact future-post media (to bind to one specific post)
-3. Background inspiration (for overall mood, theme, or backdrop guidance)
-
-For natural-language intent, state the understood route and proceed without exposing internal table names. Exact future-post media must never enter the reusable visual library.
-
-Reusable route:
-
-```bash
-python3 scripts/social_agent_api.py upload-visual --project-reference-id PROJECT_SLUG --image PRIVATE_ATTACHMENT_PATH --role style_example
-python3 scripts/social_agent_api.py visual-assets --project-reference-id PROJECT_SLUG
-```
-
-The hosted worker analyzes the private image once. While status is `analyzing`, report that review is pending and poll with `visual-assets`. At `ready_for_review`, present the returned description, tags, best use, avoid use, and recommended kind. Do not activate without explicit confirmation. After confirmation, use one command:
-
-```bash
-python3 scripts/social_agent_api.py visual-lifecycle --project-reference-id PROJECT_SLUG --asset-id ASSET_ID --action activate --asset-kind reference
-python3 scripts/social_agent_api.py visual-lifecycle --project-reference-id PROJECT_SLUG --asset-id ASSET_ID --action activate --asset-kind background
-```
-
-Use `--action archive` to remove a reusable image from future selection while preserving history.
-
-Exact future-post route:
-
-```bash
-python3 scripts/social_agent_api.py upload-post-media --project-reference-id PROJECT_SLUG --image PRIVATE_ATTACHMENT_PATH --role style_example
-python3 scripts/social_agent_api.py post-media --project-reference-id PROJECT_SLUG
-```
-
-While lifecycle is `analyzing`, poll with `post-media`. At `ready_to_attach`, attach only after identifying the intended tenant-scoped content version:
-
-```bash
-python3 scripts/social_agent_api.py post-media-action --project-reference-id PROJECT_SLUG --asset-id ASSET_ID --action attach --content-version-id CONTENT_VERSION_ID
-```
-
-Then show the unchanged image with that post and use the normal separate post and media approval gates. Use `--action archive` only before attachment when the user rejects the upload.
+For an image the user attaches or references in chat — as a reusable brand reference, background inspiration, or exact media for one post — see [reference/visual-assets.md](reference/visual-assets.md).
 
 After server-confirmed Handled verification, use only Social Agent product operations that provide:
 
@@ -262,55 +221,9 @@ check_status
 
 Never invoke credential issuance, user impersonation, raw SQL, arbitrary requests, secret access, operator bootstrap, workspace administration, or unrestricted execution. Never paste a guest resume token or verification polling credential into a tool argument, URL, prompt, log, or conversation.
 
-## Flow: update project (guided questionnaire fields)
+## Flow: update project and other standing settings
 
-Use this for a project field that the questionnaire itself owns (e.g. positioning, audience, cadence) — not for brand palette, typography, imagery rules, brand voice, or content pillars, which are a different mechanism covered next.
-
-1. Read the current hosted update step.
-2. Ask only the server-returned update question.
-3. Submit the user's answer through the allowlisted hosted update operation.
-4. Continue until hosted state confirms completion.
-5. Summarize only server-confirmed changes.
-
-Hosted state remains the source of truth.
-
-## Flow: update visual style and other standing profiles
-
-Use this when the user gives a standing instruction about a project's brand palette, typography, imagery rules, brand voice, or content pillars — phrased as a lasting preference ("from now on...", "always use...", "our brand voice should be...") rather than a one-off note about a single post. A one-off note about a single post belongs in that post's own revision instead (Copy review and copy gate, or `regenerate_asset`'s `reason`) — never write a standing profile change for something the user only wanted for one post.
-
-This is `update_project_context`, a different mechanism from the guided update flow above: it replaces one whole profile in a single call, outside the questionnaire, and takes effect starting with the next batch generated after the call. Posts already generated keep the context they were approved under.
-
-1. Read the contract before first use, and every time this flow runs after a version-check update, the same discipline as any other contract read in this skill:
-
-   ```bash
-   python3 scripts/social_agent_api.py job-contracts --job-type update_project_context
-   ```
-
-   Its `notes` name the exact keys each `profile_type` accepts — do not guess a key name or invent one, and do not carry a shape forward from a previous session without re-reading it.
-2. Confirm which `profile_type` the user's instruction targets (most often `visual_rules` for anything about colors, look, or imagery). If ambiguous, ask rather than guess.
-3. Submit `update_project_context` with that `profile_type` and a `content` object built only from the contract's documented keys for it.
-4. This is a full replace, not a merge, and there is currently no way to read a profile's existing content back before overwriting it. If the user is changing only part of an existing profile (e.g. only the palette, not the typography or imagery rules) and has not stated the other fields in this conversation, say plainly that this update will replace the whole profile and ask the user to state the complete set of values, rather than guessing at or silently dropping a value they set previously.
-5. Confirm back to the user in plain language what changed, without quoting the job type, field names, or raw JSON.
-
-```bash
-python3 scripts/social_agent_api.py create-job --job-type update_project_context \
-  --project-reference-id PROJECT_SLUG --idempotency-key '<stable-operation-key>' \
-  --inputs-json '{"profile_type":"visual_rules","content":{"palette":"...","typography":"...","imagery_rules":"...","avoid":"..."}}'
-```
-
-### Deriving visual_rules from an already-uploaded reference image
-
-Use this when the standing instruction points at a specific reference image rather than describing a palette directly in words — "from now on, use the visual style of the karaoke reference," "match our reference image's colors going forward." This works even when that image was uploaded and activated in a past session: reference images are project state, not session state, and are retrievable regardless of which session uploaded them.
-
-1. List the project's reference images:
-
-   ```bash
-   python3 scripts/social_agent_api.py visual-assets --project-reference-id PROJECT_SLUG
-   ```
-
-2. Match the user's description against every returned asset with `status` `active`, using its `display_name`, `vision_description`, and `visual_tags`. If more than one active asset plausibly matches, or none clearly does, ask the user to identify it rather than guessing — never derive a standing palette from the wrong image.
-3. Build the `content` object from that asset's own `vision_description` and, when present, its `visual_analysis.reference_treatment` — never invent or paraphrase a palette from general impression. `reference_treatment` already states, for that specific image, what to carry forward (palette, composition, energy) and what not to copy (its literal subject matter); ground `content.palette` and `content.imagery_rules` in that language rather than composing new wording.
-4. Present the derived `content` to the user in plain language before submitting — this still replaces the whole profile (step 4 above), so confirm it matches what they meant before calling `update_project_context`, the same as any other value in this flow.
+For a project field the questionnaire itself owns (positioning, audience, cadence), for a standing instruction about brand palette, typography, imagery rules, brand voice, or content pillars, or for deriving a standing palette from an already-uploaded reference image, see [reference/updating-project-settings.md](reference/updating-project-settings.md). Hosted state remains the source of truth for every case.
 
 ## Flow: recurrent posting
 
@@ -521,40 +434,6 @@ python3 scripts/scheduling_workflows.py schedule-one \
 
 MCP is not part of current public onboarding. A later release may provide optional post-onboarding MCP interoperability for supported clients. Do not configure or authenticate MCP during the guest onboarding or Handled verification flow. The reserved future notes live in `docs/mcp-client-setup.md`.
 
-## Automatic version check
+## Installation and version check
 
-The bundled helper compares the installed `VERSION` file with the official `VERSION` file on the `main` branch of `lniass/social-skills`. It checks lazily before an API request only when the last successful check is at least six hours old. An API transport or HTTP failure may trigger another check after a separate thirty-minute failure cooldown. Repeated commands inside either interval do not contact GitHub.
-
-When a newer official version exists, a standalone installed skill downloads the fixed official GitHub archive, verifies that it contains the complete skill and the expected version, preserves one previous copy, replaces the skill atomically, and re-runs the original command once. A failed check or failed installation leaves the working skill unchanged. Git checkouts are never self-replaced and must be updated with Git or the documented Skills CLI command.
-
-Manual inspection and forced checking are available without exposing credentials:
-
-```bash
-python3 scripts/skill_updater.py status
-python3 scripts/skill_updater.py check
-```
-
-## Install the skill
-
-Agent Skills CLI:
-
-```bash
-npx -y skills@latest add lniass/social-skills
-```
-
-Hermes complete-directory install:
-
-```bash
-git clone --depth 1 https://github.com/lniass/social-skills.git
-SKILL_DEST="${HERMES_HOME:-$HOME/.hermes}/skills/social-agent-public-workflows"
-install -d "$SKILL_DEST"
-rsync -a --delete social-skills/skills/social-agent-public-workflows/ "$SKILL_DEST/"
-```
-
-Update an Agent Skills CLI installation with:
-
-```bash
-npx -y skills@latest update social-agent-public-workflows -y
-```
-
-For the Hermes complete-directory method, pull the clone, rerun the `rsync --delete` command, and run `/reload-skills` or start a new session. This method requires `git` and `rsync`. Do not use a raw `SKILL.md` URL because it omits linked files.
+For the automatic version-check mechanism and install/update commands, see [reference/installation.md](reference/installation.md).
