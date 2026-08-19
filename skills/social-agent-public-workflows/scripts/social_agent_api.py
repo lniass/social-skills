@@ -33,7 +33,7 @@ if str(SCRIPT_DIRECTORY) not in sys.path:
 import skill_updater as _skill_updater  # noqa: E402
 
 API_VERSION = "2026-07-01"
-SKILL_VERSION = "0.6.20"
+SKILL_VERSION = "0.6.21"
 DEFAULT_API_BASE_URL = "https://social-agent-api.voicevine.ai"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 MAX_TIMEOUT_SECONDS = 120.0
@@ -665,6 +665,11 @@ def build_parser() -> argparse.ArgumentParser:
     visual_lifecycle.add_argument("--asset-id", required=True)
     visual_lifecycle.add_argument("--action", choices=("activate", "archive"), required=True)
     visual_lifecycle.add_argument("--asset-kind", choices=("reference", "background"))
+    visual_lifecycle.add_argument(
+        "--reason",
+        choices=("user_requested", "superseded", "duplicate", "quality_issue", "no_longer_relevant", "other"),
+        help="required for --action archive; classifies why, for traceability",
+    )
     post_media = subparsers.add_parser("post-media", help="list exact future-post images")
     post_media.add_argument("--project-reference-id", required=True)
     post_media_action = subparsers.add_parser("post-media-action", help="attach or archive exact future-post media")
@@ -719,11 +724,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             project = quote(args.project_reference_id, safe="")
             result = request_json("GET", f"/v1/projects/{project}/{args.command}", timeout=args.timeout)
         elif args.command == "visual-lifecycle":
+            if args.action == "archive" and not args.reason:
+                raise SocialAgentAPIError("--reason is required for --action archive")
             project = quote(args.project_reference_id, safe="")
             asset_id = _validated_asset_id(args.asset_id)
             body = {"action": args.action}
             if args.asset_kind:
                 body["asset_kind"] = args.asset_kind
+            if args.reason:
+                body["reason"] = args.reason
             result = request_json(
                 "POST",
                 f"/v1/projects/{project}/visual-assets/{asset_id}/lifecycle",

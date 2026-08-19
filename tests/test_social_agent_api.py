@@ -139,7 +139,7 @@ class SocialAgentAPITests(unittest.TestCase):
         self.assertEqual(request["method"], "GET")
         self.assertEqual(request["path"], "/v1/capabilities")
         self.assertEqual(request["authorization"], f"Bearer {TEST_KEY}")
-        self.assertEqual(request["user_agent"], "social-agent-public-workflows/0.6.20")
+        self.assertEqual(request["user_agent"], "social-agent-public-workflows/0.6.21")
         self.assertIsNone(request["body"])
 
     def test_create_job_cli_sends_versioned_job_packet(self) -> None:
@@ -237,6 +237,48 @@ class SocialAgentAPITests(unittest.TestCase):
             link.symlink_to(source)
             with self.assertRaisesRegex(api.SocialAgentAPIError, "regular file"):
                 api._read_upload_image(link)
+
+    def test_visual_lifecycle_archive_requires_a_classified_reason(self) -> None:
+        with LocalServer() as base_url, patch.dict(os.environ, local_environment(base_url), clear=True):
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                exit_code = api.main(
+                    [
+                        "visual-lifecycle",
+                        "--project-reference-id",
+                        "demo-project",
+                        "--asset-id",
+                        ASSET_ID,
+                        "--action",
+                        "archive",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(RecordingHandler.requests, [])
+
+    def test_visual_lifecycle_archive_sends_the_classified_reason(self) -> None:
+        with LocalServer() as base_url, patch.dict(os.environ, local_environment(base_url), clear=True):
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                exit_code = api.main(
+                    [
+                        "visual-lifecycle",
+                        "--project-reference-id",
+                        "demo-project",
+                        "--asset-id",
+                        ASSET_ID,
+                        "--action",
+                        "archive",
+                        "--reason",
+                        "user_requested",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request = RecordingHandler.requests[0]
+        self.assertEqual(request["path"], f"/v1/projects/demo-project/visual-assets/{ASSET_ID}/lifecycle")
+        self.assertEqual(request["body"], {"action": "archive", "reason": "user_requested"})
 
     def test_asset_preview_fetches_private_image_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
