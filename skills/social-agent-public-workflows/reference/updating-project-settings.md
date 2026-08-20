@@ -16,7 +16,7 @@ Hosted state remains the source of truth.
 
 ## Flow: update visual style and other standing profiles
 
-Use this when the user gives a standing instruction about a project's brand palette, typography, imagery rules, brand voice, or content pillars — phrased as a lasting preference ("from now on...", "always use...", "our brand voice should be...") rather than a one-off note about a single post. A one-off note about a single post belongs in that post's own revision instead (Copy review and copy gate, or `regenerate_asset`'s `reason`, both in `SKILL.md`) — never write a standing profile change for something the user only wanted for one post.
+Use this when the user gives a standing instruction about a project's brand palette, typography, imagery rules, brand voice, or content pillars — phrased as a lasting preference ("from now on...", "always use...", "our brand voice should be...") rather than a one-off note about a single post. A one-off note about a single post belongs in that post's own revision instead (Copy review and copy gate, `regenerate_asset`'s `reason`, or `modify_asset`'s `instruction`, all in `SKILL.md`) — never write a standing profile change for something the user only wanted for one post.
 
 This is `update_project_context`, a different mechanism from the guided update flow above: it replaces one whole profile in a single call, outside the questionnaire, and takes effect starting with the next batch generated after the call. Posts already generated keep the context they were approved under.
 
