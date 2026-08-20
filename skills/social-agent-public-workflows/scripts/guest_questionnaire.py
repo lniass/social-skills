@@ -43,7 +43,7 @@ except ImportError:  # pragma: no cover - POSIX fallback
     msvcrt = None  # type: ignore[assignment]
 
 API_VERSION = "2026-07-01"
-SKILL_VERSION = "0.6.21"
+SKILL_VERSION = "0.6.23"
 DEFAULT_API_BASE_URL = "https://social-agent-api.voicevine.ai"
 TRUSTED_HANDLED_ORIGIN = "https://handled.voicevine.ai"
 TRUSTED_HANDLED_VERIFICATION_PATH = "/social-agent/verify"

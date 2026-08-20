@@ -118,6 +118,7 @@ class SocialAgentAPITests(unittest.TestCase):
                 "list_posts",
                 "approve_or_reject",
                 "regenerate_asset",
+                "modify_asset",
                 "connect_destination",
                 "schedule_posts",
                 "check_status",
@@ -139,7 +140,7 @@ class SocialAgentAPITests(unittest.TestCase):
         self.assertEqual(request["method"], "GET")
         self.assertEqual(request["path"], "/v1/capabilities")
         self.assertEqual(request["authorization"], f"Bearer {TEST_KEY}")
-        self.assertEqual(request["user_agent"], "social-agent-public-workflows/0.6.21")
+        self.assertEqual(request["user_agent"], "social-agent-public-workflows/0.6.23")
         self.assertIsNone(request["body"])
 
     def test_create_job_cli_sends_versioned_job_packet(self) -> None:
@@ -174,6 +175,83 @@ class SocialAgentAPITests(unittest.TestCase):
             },
         )
         self.assertEqual(json.loads(stdout.getvalue()), {"ok": True})
+
+    def test_create_job_cli_sends_modify_asset_edit_instruction(self) -> None:
+        content_item_id = "22222222-2222-4222-8222-222222222222"
+        with LocalServer() as base_url, patch.dict(os.environ, local_environment(base_url), clear=True):
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                exit_code = api.main(
+                    [
+                        "create-job",
+                        "--job-type",
+                        "modify_asset",
+                        "--idempotency-key",
+                        "modify-demo-001",
+                        "--project-reference-id",
+                        "demo-project",
+                        "--inputs-json",
+                        json.dumps(
+                            {
+                                "content_item_id": content_item_id,
+                                "instruction": "remove the amber tint but keep everything else the same",
+                            }
+                        ),
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request = RecordingHandler.requests[0]
+        self.assertEqual(request["path"], "/v1/jobs")
+        self.assertEqual(
+            request["body"],
+            {
+                "api_version": "2026-07-01",
+                "job_type": "modify_asset",
+                "idempotency_key": "modify-demo-001",
+                "project_reference_id": "demo-project",
+                "inputs": {
+                    "content_item_id": content_item_id,
+                    "instruction": "remove the amber tint but keep everything else the same",
+                },
+            },
+        )
+        self.assertEqual(json.loads(stdout.getvalue()), {"ok": True})
+
+    def test_create_job_fetches_and_prints_contract_after_modify_asset_contract_violation(self) -> None:
+        violation = api.SocialAgentAPIError(
+            "Social Agent API returned HTTP 422 (JOB_INPUT_CONTRACT_VIOLATION)",
+            server_code="JOB_INPUT_CONTRACT_VIOLATION",
+            field_errors=[{"field": "instruction", "code": "required"}],
+        )
+        contract = {
+            "job_type": "modify_asset",
+            "fields": {
+                "content_item_id": {"type": "uuid", "required": True},
+                "instruction": {"type": "string", "required": True, "min_length": 1, "max_length": 2000},
+            },
+        }
+        with patch.object(api, "request_json", side_effect=[violation, contract]) as request_json:
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                exit_code = api.main(
+                    [
+                        "create-job",
+                        "--job-type",
+                        "modify_asset",
+                        "--idempotency-key",
+                        "modify-demo-002",
+                        "--inputs-json",
+                        '{"content_item_id":"22222222-2222-4222-8222-222222222222"}',
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(request_json.call_count, 2)
+        self.assertEqual(request_json.call_args_list[1].args, ("GET", "/v1/job-contracts/modify_asset"))
+        printed = json.loads(stderr.getvalue())
+        self.assertFalse(printed["ok"])
+        self.assertEqual(printed["job_contract"], contract)
 
     def test_asset_preview_link_mints_capability_with_workspace_bearer_credential(self) -> None:
         with LocalServer() as base_url, patch.dict(os.environ, local_environment(base_url), clear=True):

@@ -1,7 +1,7 @@
 ---
 name: social-agent-public-workflows
 description: Write, review, approve, and schedule Facebook posts for a business through the hosted Social Agent service. Use this whenever someone asks for a social media post or caption, wants to see posts already prepared for them, wants to approve or schedule one, wants to connect their Facebook Page, or wants recurring posting set up. Post copy comes from the hosted service and is never written locally. Covers first-time setup through secure Handled verification as well as returning users who already have a project.
-version: 0.6.21
+version: 0.6.23
 author: SimpleTechX / VoiceVine
 
 license: MIT
@@ -211,6 +211,8 @@ configure_recurrence
 get_recurrence
 create_posts
 create_assets
+regenerate_asset
+modify_asset
 list_posts
 list_notifications
 approve_or_reject
@@ -307,15 +309,23 @@ Reply with:
 Reply with:
 - approve image(s) [number(s)]
 - regenerate image(s) [number(s)]
+- edit image(s) [number(s)]: [the one thing to change]
 - approve all images
 ```
 
 - Accept `approve all images` only when it follows that final image gate in the current review and every listed rendered image was displayed. It applies only to the enumerated image set.
+- `edit image(s) [number(s)]: [...]` routes to `modify_asset`, not `regenerate_asset` — see "Choosing between `regenerate_asset` and `modify_asset`" below. Route free-text replies that name a specific change the same way even when they don't use this exact phrasing.
 - A bare approval during image review applies only to the last fully displayed image. Do not expand it to unseen images.
 - Submit one `approve_or_reject` operation per explicitly selected exact asset version. An image decision does not change the caption decision.
-- **How to execute image regeneration when requested (e.g., `regenerate image 1` or style changes):** Submit a `regenerate_asset` job with `content_item_id` set to that post's `content_item_id` (from `list_posts`) and your desired changes in `reason`. That one call covers every post state — awaiting approval or already approved — and always targets the exact same post: it never creates a new one, and the approved caption is never touched. The server queues the `create_assets` continuation job itself; you do not need to know or reason about the post's current approval state to make this call. If the post is already scheduled or published, the job fails with a clear error — tell the user a direct image swap isn't available for that post rather than retrying or falling back to another job type.
-  - **Never call `create_assets` directly.** Standing alone, asset creation is an internal server-only continuation job and does not have a public contract.
-  - **Never fall back to `create_posts` to regenerate an image.** `create_posts` creates a new post; it is never the right tool for changing the image on an existing one, regardless of that post's approval state.
+- **Choosing between `regenerate_asset` and `modify_asset`:** These are two distinct operations, not two names for the same request. Route on what the user actually said, not on which one is more familiar.
+  - No specific complaint, or a request for a different take with nothing named to preserve — "I don't like this, try something different," "give me another version," "make a new one" — is `regenerate_asset`. It re-renders from scratch; the project's standing brand and visual rules govern the result unconditionally.
+  - A request naming one specific thing to change while keeping everything else the same — "remove the amber tint but keep everything else the same," "change the background to blue, don't touch anything else," "fix the logo placement, leave the rest as is" — is `modify_asset`. It edits the exact current image in place, and that instruction takes precedence over any standing brand or visual rule it explicitly contradicts.
+  - Carry the user's specific change request into `modify_asset`'s `instruction` field exactly as they said it, not a paraphrase or summary. The server builds its edit prompt from that exact text, and a paraphrase can silently drop the one detail the edit depends on.
+- **How to execute image regeneration when requested (e.g., `regenerate image 1` or a style change with nothing specific named to preserve):** Submit a `regenerate_asset` job with `content_item_id` set to that post's `content_item_id` (from `list_posts`) and your desired changes in `reason`. That one call covers every post state — awaiting approval or already approved — and always targets the exact same post: it never creates a new one, and the approved caption is never touched. The server queues the `create_assets` continuation job itself; you do not need to know or reason about the post's current approval state to make this call. If the post is already scheduled or published, the job fails with a clear error — tell the user a direct image swap isn't available for that post rather than retrying or falling back to another job type.
+- **How to execute an in-place image edit when the user names a specific attribute to change and keep the rest identical:** Submit a `modify_asset` job with `content_item_id` set to that post's `content_item_id` (from `list_posts`) and the user's specific change request in `instruction`. Unlike `regenerate_asset`'s optional `reason`, `instruction` is required — there is no house-rules fallback for an edit that names nothing to change. The server resolves the post's current asset itself and attaches its actual image bytes to the generator as the edit source, so there is no asset ID to know or pass. That one call covers every post state — awaiting approval or already approved — and always targets the exact same post: it never creates a new one, and the approved caption is never touched. The server queues the `create_assets` continuation job itself; you do not need to know or reason about the post's current approval state to make this call. If the post is already scheduled or published, the job fails with a clear error — tell the user a direct image edit isn't available for that post rather than retrying or falling back to another job type.
+- **Never call `create_assets` directly.** Standing alone, asset creation is an internal server-only continuation job and does not have a public contract.
+- **Never fall back to `create_posts` to regenerate or edit an image.** `create_posts` creates a new post; it is never the right tool for changing the image on an existing one, regardless of that post's approval state.
+- **Bringing back an earlier image version:** `regenerate_asset` and `modify_asset` never delete the image they replace. The replaced asset becomes `superseded`, not gone, and it still appears in that post's `assets` array from `list_posts` (same as an asset the user explicitly rejected — nothing filters either state out of that array). If the user says something like "actually, I liked the earlier one better" or "go back to the first version," do not regenerate or modify again. Find that exact earlier asset in the post's `assets` array (its `status` there will read `superseded`) and submit `approve_or_reject` with `decision=approved` targeting its own `subject_id`/`subject_version`/`subject_hash` — the same call shape as approving any other image, just pointed at an older entry instead of the newest one. The server demotes whatever is currently approved for that post back to `superseded` automatically; there is no separate "restore" operation and no other field to set. A `rejected` asset cannot be brought back this way — rejection is a final judgment call, not a version you can revisit.
 
 ### 3. Scheduling gate
 
