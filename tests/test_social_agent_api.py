@@ -140,7 +140,7 @@ class SocialAgentAPITests(unittest.TestCase):
         self.assertEqual(request["method"], "GET")
         self.assertEqual(request["path"], "/v1/capabilities")
         self.assertEqual(request["authorization"], f"Bearer {TEST_KEY}")
-        self.assertEqual(request["user_agent"], "social-agent-public-workflows/0.6.25")
+        self.assertEqual(request["user_agent"], "social-agent-public-workflows/0.6.26")
         self.assertIsNone(request["body"])
 
     def test_create_job_cli_sends_versioned_job_packet(self) -> None:
@@ -175,6 +175,54 @@ class SocialAgentAPITests(unittest.TestCase):
             },
         )
         self.assertEqual(json.loads(stdout.getvalue()), {"ok": True})
+
+    def test_create_job_cli_sends_confirm_user_retry_only_when_asked(self) -> None:
+        args = [
+            "create-job",
+            "--job-type",
+            "get_next_question",
+            "--idempotency-key",
+            "question-demo-002",
+            "--inputs-json",
+            "{}",
+        ]
+        with LocalServer() as base_url, patch.dict(os.environ, local_environment(base_url), clear=True):
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(api.main(args), 0)
+                self.assertEqual(api.main([*args, "--confirm-user-retry"]), 0)
+
+        plain, confirmed = (request["body"] for request in RecordingHandler.requests)
+        self.assertNotIn("confirm_user_retry", plain)
+        self.assertIs(confirmed["confirm_user_retry"], True)
+        self.assertEqual(
+            {k: v for k, v in confirmed.items() if k != "confirm_user_retry"}, plain
+        )
+
+    def test_retry_refusal_surfaces_server_wording_and_nothing_else(self) -> None:
+        with LocalServer() as base_url, patch.dict(os.environ, local_environment(base_url), clear=True):
+            RecordingHandler.response_status = 409
+            RecordingHandler.response_body = {
+                "error": {
+                    "code": "RETRY_REQUIRES_USER_CONFIRMATION",
+                    "message": "This exact request already failed.",
+                    "details": {
+                        "failed_job_id": "job-secret-id",
+                        "user_message": "The model couldn't write the post. Please try again in a moment.",
+                        "next_action": "Reply to the user with user_message and ask whether they want a retry.",
+                        "other": TEST_KEY,
+                    },
+                }
+            }
+            with self.assertRaises(api.SocialAgentAPIError) as caught:
+                api.request_json("POST", "/v1/jobs", body={})
+
+        message = str(caught.exception)
+        self.assertEqual(caught.exception.server_code, "RETRY_REQUIRES_USER_CONFIRMATION")
+        self.assertIn("HTTP 409 (RETRY_REQUIRES_USER_CONFIRMATION)", message)
+        self.assertIn("user_message: The model couldn't write the post.", message)
+        self.assertIn("next_action: Reply to the user with user_message", message)
+        self.assertNotIn("job-secret-id", message)
+        self.assertNotIn(TEST_KEY, message)
 
     def test_create_job_cli_sends_modify_asset_edit_instruction(self) -> None:
         content_item_id = "22222222-2222-4222-8222-222222222222"
