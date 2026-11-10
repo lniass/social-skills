@@ -75,6 +75,21 @@ The same reasoning covers prompts and confirmations. If an agent needs to ask
 the user something, the wording belongs in `SKILL.md` as a behavioral rule
 phrased as an instruction, or it comes from a server response.
 
+## The server owns user-facing wording
+
+The same rule covers anything else the user should be told: failures,
+confirmations, warnings. The hosted service returns the wording in
+`user_message` and the agent's instruction in `next_action` (with `code` and
+`retryable` where they apply). Skills relay those fields; they do not compose
+their own user-facing copy for a specific case.
+
+- `SKILL.md` keeps one generic rule: say `user_message` to the user and follow
+  `next_action`. Do not add per-error or per-job-type messages here.
+- If a new situation needs new wording, the fix is a server field in the
+  orchestrator, shipped together with any skill change it needs.
+- The Handled app only relays agent messages, so wording a skill invents
+  reaches users unreviewed and drifts from every other client.
+
 ## Verification
 
 ```bash
