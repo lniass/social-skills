@@ -1,7 +1,7 @@
 ---
 name: social-agent-public-workflows
 description: Write, review, approve, and schedule Facebook posts for a business through the hosted Social Agent service. Use this whenever someone asks for a social media post or caption, wants to see posts already prepared for them, wants to approve or schedule one, wants to connect their Facebook Page, or wants recurring posting set up. Post copy comes from the hosted service and is never written locally. Covers first-time setup through secure Handled verification as well as returning users who already have a project.
-version: 0.6.24
+version: 0.6.25
 author: SimpleTechX / VoiceVine
 
 license: MIT
@@ -372,6 +372,8 @@ Reply with:
 - Submit scheduling only for the exact displayed, approved set after that separate confirmation. `intent_recorded` is not external scheduling or publication success.
 
 ## Failure handling
+
+**When a job you submitted fails, stop and let the server's words reach the user.** A job whose `status` is `failed` or `dead_letter` ends your work on that request for this turn. Do not resubmit it, do not submit a different job to work around it, and do not keep investigating. Make its `error_json.user_message` your reply. You may translate it into the conversation's language or join it to the rest of your reply, but keep its meaning, add no technical detail, and never replace it with your own guess at the cause. Then follow `error_json.next_action`. When `retryable` is `true`, ask whether the user wants you to try again, and resubmit the same job type with the same inputs only after they say yes in a later message. A job whose `error_json.code` is `retrying` has not failed. Keep polling it silently and say nothing about a problem. Never tell the user a post or image is ready, done, or on its way until its job has actually `succeeded`.
 
 If the pre-onboarding `social_agent_api.py projects` check from Presenting connected projects fails for a credentialed or signed-in identity, stop and tell the user the connected-projects check failed rather than starting or offering onboarding. If the guest helper or server-owned questionnaire is unavailable, stop and preserve private state. If secure Handled verification is unavailable, denied, expired, or incomplete, stop without deleting guest state. If post generation reports `failed`, preserve the complete guest and verification state; never recover by running `forget`, clearing state, starting a new questionnaire, or creating a fresh verification session. Use only `retry-post --confirm-user-retry`, and only after an explicit user retry request. If entitlement, claim, configured-project proof, or usage authorization is missing, stop at that boundary. Never infer success from user text.
 
