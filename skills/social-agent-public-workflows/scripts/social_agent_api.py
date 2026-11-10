@@ -33,7 +33,7 @@ if str(SCRIPT_DIRECTORY) not in sys.path:
 import skill_updater as _skill_updater  # noqa: E402
 
 API_VERSION = "2026-07-01"
-SKILL_VERSION = "0.6.25"
+SKILL_VERSION = "0.6.26"
 DEFAULT_API_BASE_URL = "https://social-agent-api.voicevine.ai"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 MAX_TIMEOUT_SECONDS = 120.0
@@ -48,6 +48,7 @@ CREDENTIAL_PATTERN = re.compile(r"sai_[A-Za-z0-9_-]{8,64}\.[A-Za-z0-9_-]{43,256}
 SAFE_ERROR_CODE_PATTERN = re.compile(r"[A-Z][A-Z0-9_]{0,63}")
 SAFE_FIELD_ERROR_CODE_PATTERN = re.compile(r"[a-z][a-z0-9_]{0,63}")
 MAX_SAFE_ERROR_MESSAGE_LENGTH = 2_000
+RETRY_REFUSAL_CODE = "RETRY_REQUIRES_USER_CONFIRMATION"
 MAX_SAFE_FIELD_NAME_LENGTH = 67
 MAX_SAFE_FIELD_ERRORS = 100
 MAX_SAFE_EXPECTED_VALUES = 20
@@ -315,6 +316,23 @@ def _safe_server_error(payload: bytes) -> tuple[str | None, str | None, list[dic
     code = error.get("code")
     if not isinstance(code, str) or SAFE_ERROR_CODE_PATTERN.fullmatch(code) is None:
         return None, None, []
+    if code == RETRY_REFUSAL_CODE:
+        # The server's own wording for this refusal is the whole point: it is
+        # what the user must be told and what to do next.
+        details = error.get("details")
+        details = details if isinstance(details, dict) else {}
+        user_message = _safe_printable_string(
+            details.get("user_message"), maximum=MAX_SAFE_ERROR_MESSAGE_LENGTH
+        )
+        next_action = _safe_printable_string(
+            details.get("next_action"), maximum=MAX_SAFE_ERROR_MESSAGE_LENGTH
+        )
+        parts = [
+            f"{label}: {text}"
+            for label, text in (("user_message", user_message), ("next_action", next_action))
+            if text
+        ]
+        return code, " ".join(parts) or None, []
     if code != "JOB_INPUT_CONTRACT_VIOLATION":
         return code, None, []
     message = _safe_printable_string(error.get("message"), maximum=MAX_SAFE_ERROR_MESSAGE_LENGTH)
@@ -635,6 +653,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="project slug from the projects list, not its id",
     )
     create_job.add_argument("--inputs-json", type=_json_object, default={})
+    create_job.add_argument(
+        "--confirm-user-retry",
+        action="store_true",
+        help="only after the user explicitly asked, in a message after a failure, to try the same request again",
+    )
 
     job_status = subparsers.add_parser("job-status", help="read one job by its server ID")
     job_status.add_argument("job_id")
@@ -702,6 +725,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             }
             if args.project_reference_id:
                 payload["project_reference_id"] = args.project_reference_id
+            if args.confirm_user_retry:
+                payload["confirm_user_retry"] = True
             result = request_json("POST", "/v1/jobs", body=payload, timeout=args.timeout)
         elif args.command == "job-status":
             result = request_json("GET", f"/v1/jobs/{quote(args.job_id, safe='')}", timeout=args.timeout)
