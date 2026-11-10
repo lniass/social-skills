@@ -1,7 +1,7 @@
 ---
 name: social-agent-public-workflows
 description: Write, review, approve, and schedule Facebook posts for a business through the hosted Social Agent service. Use this whenever someone asks for a social media post or caption, wants to see posts already prepared for them, wants to approve or schedule one, wants to connect their Facebook Page, or wants recurring posting set up. Post copy comes from the hosted service and is never written locally. Covers first-time setup through secure Handled verification as well as returning users who already have a project.
-version: 0.6.28
+version: 0.6.29
 author: SimpleTechX / VoiceVine
 
 license: MIT
@@ -256,6 +256,7 @@ list_schedule
 list_notifications
 get_notification_review
 approve_or_reject
+decide_posts
 connect_destination
 schedule_posts
 check_status
@@ -330,14 +331,17 @@ Do not infer that a generic approval covers a batch. Present server-returned con
 ```text
 Reply with:
 - approve caption [number(s)]
-- edit caption [number(s)]
+- tweak caption [number(s)]: [what to change]
+- skip caption [number(s)]
 - approve all captions
 ```
 
 - Accept `approve all captions` only when it follows that final copy gate in the current review and every listed caption was displayed. It applies only to the enumerated caption set.
 - A bare approval applies only to the last fully displayed caption. Do not expand `I approve`, `approved`, `looks good`, or `all good` to unseen captions or to the entire batch.
-- Submit one `approve_or_reject` operation per explicitly selected exact content version. A caption decision never approves an image.
-- For an edit, submit `decision=revision_requested`, preserve the user's bounded feedback in `reason`, set `feedback_category` to the closest server-supported field, keep `feedback_scope=revision_only` unless the user explicitly asks for a future preference, and use only these canonical `requested_fields`: `subject`, `angle`, `caption`, `cta`, `text_overlay`, `visual_reference`, `visual_style`, `claim`, `format`, `strategy`. Use singular `text_overlay` even though returned creative JSON contains `text_overlays`. Never silently turn a one-post edit into a standing rule.
+- Record one reply's decisions with one `decide_posts` job: one entry per caption the user decided on, each with its exact `content_version_id`, `version`, and `content_hash`, and `decision` `approve`, `tweak` (with the user's words in `instruction`), or `skip`. For `approve all captions`, list every displayed caption. A caption the user did not mention gets no entry: silence is never a decision. A caption decision never approves an image.
+- Say the returned `user_message` and follow `next_action`. If the job is refused with `DECISIONS_NOT_RECORDED`, nothing was recorded: say its `user_message`, fetch the current versions, show them, and ask again. Never resubmit the same list.
+- Skip means "not this one": the post stays on the shelf and its scheduled slot is skipped. It is not a rejection of the content and needs no reason.
+- `approve_or_reject` remains available for a single decision. For a tweak that needs structured feedback, use it with `decision=revision_requested`, preserve the user's bounded feedback in `reason`, set `feedback_category` to the closest server-supported field, keep `feedback_scope=revision_only` unless the user explicitly asks for a future preference, and use only these canonical `requested_fields`: `subject`, `angle`, `caption`, `cta`, `text_overlay`, `visual_reference`, `visual_style`, `claim`, `format`, `strategy`. Use singular `text_overlay` even though returned creative JSON contains `text_overlays`. Never silently turn a one-post edit into a standing rule.
 
 ### 2. Image review and image gate
 
@@ -351,13 +355,14 @@ Reply with:
 - approve image(s) [number(s)]
 - regenerate image(s) [number(s)]
 - edit image(s) [number(s)]: [the one thing to change]
+- skip image(s) [number(s)]
 - approve all images
 ```
 
 - Accept `approve all images` only when it follows that final image gate in the current review and every listed rendered image was displayed. It applies only to the enumerated image set.
 - `edit image(s) [number(s)]: [...]` routes to `modify_asset`, not `regenerate_asset` — see "Choosing between `regenerate_asset` and `modify_asset`" below. Route free-text replies that name a specific change the same way even when they don't use this exact phrasing.
 - A bare approval during image review applies only to the last fully displayed image. Do not expand it to unseen images.
-- Submit one `approve_or_reject` operation per explicitly selected exact asset version. An image decision does not change the caption decision.
+- Record approve and skip decisions for images with one `decide_posts` job (`subject_type=asset`, the exact `asset_id`, `source_version`, and `checksum`), the same way as captions; for `approve all images`, list every displayed image. Regenerate and edit keep their own job types below. An image decision does not change the caption decision.
 - **Choosing between `regenerate_asset` and `modify_asset`:** These are two distinct operations, not two names for the same request. Route on what the user actually said, not on which one is more familiar.
   - No specific complaint, or a request for a different take with nothing named to preserve — "I don't like this, try something different," "give me another version," "make a new one" — is `regenerate_asset`. It re-renders from scratch; the project's standing brand and visual rules govern the result unconditionally.
   - A request naming one specific thing to change while keeping everything else the same — "remove the amber tint but keep everything else the same," "change the background to blue, don't touch anything else," "fix the logo placement, leave the rest as is" — is `modify_asset`. It edits the exact current image in place, and that instruction takes precedence over any standing brand or visual rule it explicitly contradicts.

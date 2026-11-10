@@ -33,7 +33,7 @@ if str(SCRIPT_DIRECTORY) not in sys.path:
 import skill_updater as _skill_updater  # noqa: E402
 
 API_VERSION = "2026-07-01"
-SKILL_VERSION = "0.6.28"
+SKILL_VERSION = "0.6.29"
 DEFAULT_API_BASE_URL = "https://social-agent-api.voicevine.ai"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 MAX_TIMEOUT_SECONDS = 120.0
@@ -88,6 +88,7 @@ JOB_TYPES = (
     "list_notifications",
     "get_notification_review",
     "approve_or_reject",
+    "decide_posts",
     "regenerate_asset",
     "modify_asset",
     "connect_destination",
