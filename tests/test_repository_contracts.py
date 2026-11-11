@@ -109,7 +109,7 @@ class RepositoryContractTests(unittest.TestCase):
         required = (
             "Present every caption as one separately numbered message before showing a copy gate.",
             "approve caption [number(s)]",
-            "tweak caption [number(s)]: [what to change]",
+            "edit caption [number(s)]: [what to change]",
             "skip caption [number(s)]",
             "skip image(s) [number(s)]",
             "silence is never a decision",

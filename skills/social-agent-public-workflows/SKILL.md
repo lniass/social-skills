@@ -331,17 +331,17 @@ Do not infer that a generic approval covers a batch. Present server-returned con
 ```text
 Reply with:
 - approve caption [number(s)]
-- tweak caption [number(s)]: [what to change]
+- edit caption [number(s)]: [what to change]
 - skip caption [number(s)]
 - approve all captions
 ```
 
 - Accept `approve all captions` only when it follows that final copy gate in the current review and every listed caption was displayed. It applies only to the enumerated caption set.
 - A bare approval applies only to the last fully displayed caption. Do not expand `I approve`, `approved`, `looks good`, or `all good` to unseen captions or to the entire batch.
-- Record one reply's decisions with one `decide_posts` job: one entry per caption the user decided on, each with its exact `content_version_id`, `version`, and `content_hash`, and `decision` `approve`, `tweak` (with the user's words in `instruction`), or `skip`. For `approve all captions`, list every displayed caption. A caption the user did not mention gets no entry: silence is never a decision. A caption decision never approves an image.
+- Record one reply's decisions with one `decide_posts` job: one entry per caption the user decided on, each with its exact `content_version_id`, `version`, and `content_hash`, and `decision` `approve`, `edit` (with the user's words in `instruction`), or `skip`. For `approve all captions`, list every displayed caption. A caption the user did not mention gets no entry: silence is never a decision. A caption decision never approves an image.
 - Say the returned `user_message` and follow `next_action`. If the job is refused with `DECISIONS_NOT_RECORDED`, nothing was recorded: say its `user_message`, fetch the current versions, show them, and ask again. Never resubmit the same list.
 - Skip means "not this one": the post stays on the shelf and its scheduled slot is skipped. It is not a rejection of the content and needs no reason.
-- `approve_or_reject` remains available for a single decision. For a tweak that needs structured feedback, use it with `decision=revision_requested`, preserve the user's bounded feedback in `reason`, set `feedback_category` to the closest server-supported field, keep `feedback_scope=revision_only` unless the user explicitly asks for a future preference, and use only these canonical `requested_fields`: `subject`, `angle`, `caption`, `cta`, `text_overlay`, `visual_reference`, `visual_style`, `claim`, `format`, `strategy`. Use singular `text_overlay` even though returned creative JSON contains `text_overlays`. Never silently turn a one-post edit into a standing rule.
+- `approve_or_reject` remains available for a single decision. For an edit that needs structured feedback, use it with `decision=revision_requested`, preserve the user's bounded feedback in `reason`, set `feedback_category` to the closest server-supported field, keep `feedback_scope=revision_only` unless the user explicitly asks for a future preference, and use only these canonical `requested_fields`: `subject`, `angle`, `caption`, `cta`, `text_overlay`, `visual_reference`, `visual_style`, `claim`, `format`, `strategy`. Use singular `text_overlay` even though returned creative JSON contains `text_overlays`. Never silently turn a one-post edit into a standing rule.
 
 ### 2. Image review and image gate
 
