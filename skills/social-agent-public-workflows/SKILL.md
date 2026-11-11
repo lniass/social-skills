@@ -1,7 +1,7 @@
 ---
 name: social-agent-public-workflows
 description: Write, review, approve, and schedule Facebook posts for a business through the hosted Social Agent service. Use this whenever someone asks for a social media post or caption, wants to see posts already prepared for them, wants to approve or schedule one, wants to connect their Facebook Page, or wants recurring posting set up. Post copy comes from the hosted service and is never written locally. Covers first-time setup through secure Handled verification as well as returning users who already have a project.
-version: 0.6.28
+version: 0.6.29
 author: SimpleTechX / VoiceVine
 
 license: MIT
@@ -284,7 +284,8 @@ Use when the user asks whether anything is pending or whether posts are waiting,
 1. Submit an allowlisted `list_notifications` job for the confirmed project reference. When the turn started from a notification reference, skip straight to step 2 for that id.
 2. For each event, submit `get_notification_review` with only its `notification_id` before saying anything about it, and follow the returned `next_action`. A review event returns an exact post: if the result says the revision is no longer current, do not present it; call `list_schedule` or `list_posts` for the exact project instead, then follow the mandatory approval presentation flow before recording any decision.
 3. A `proactive_nudge` event is a suggestion, not a review and not content. Phrase it in your own words from its `reason_code` and `facts`, as one short message, and ask. Queue no job of any kind until the user explicitly agrees in a later message. A declined or unanswered nudge needs nothing further.
-4. If `list_notifications` returns nothing, say so plainly. Do not imply older, already-handled notifications are still open.
+4. A `job_outcome_ready` event is a result the user asked for that finished after their earlier turn ended, so they have not heard about it yet. Make its `user_message` the core of your reply and follow its `next_action`: for a current success, present the returned post the same way the approval flow does; for a failure, relay the message and ask about retrying only when `retryable` is true. Never resubmit anything in the same turn.
+5. If `list_notifications` returns nothing, say so plainly. Do not imply older, already-handled notifications are still open.
 
 ## Flow: one-time scheduling
 
