@@ -121,6 +121,7 @@ class SocialAgentAPITests(unittest.TestCase):
                 "get_notification_review",
                 "approve_or_reject",
                 "decide_posts",
+                "record_nudge_response",
                 "regenerate_asset",
                 "modify_asset",
                 "connect_destination",

@@ -257,6 +257,7 @@ list_notifications
 get_notification_review
 approve_or_reject
 decide_posts
+record_nudge_response
 connect_destination
 schedule_posts
 check_status
@@ -284,7 +285,7 @@ Use when the user asks whether anything is pending or whether posts are waiting,
 
 1. Submit an allowlisted `list_notifications` job for the confirmed project reference. When the turn started from a notification reference, skip straight to step 2 for that id.
 2. For each event, submit `get_notification_review` with only its `notification_id` before saying anything about it, and follow the returned `next_action`. A review event returns an exact post: if the result says the revision is no longer current, do not present it; call `list_schedule` or `list_posts` for the exact project instead, then follow the mandatory approval presentation flow before recording any decision.
-3. A `proactive_nudge` event is a suggestion, not a review and not content. Phrase it in your own words from its `reason_code` and `facts`, as one short message, and ask. Queue no job of any kind until the user explicitly agrees in a later message. A declined or unanswered nudge needs nothing further.
+3. A `proactive_nudge` event is a suggestion, not a review and not content. Phrase it in your own words from its `reason_code` and `facts`, as one short message, and ask. Queue no job of any kind until the user answers in a later message. When they answer, first record it with `record_nudge_response` (`accepted`, `declined`, or `later`) using the nudge's `notification_id`, then follow its `next_action`. Never record an answer the user did not give; an unanswered nudge needs nothing.
 4. If `list_notifications` returns nothing, say so plainly. Do not imply older, already-handled notifications are still open.
 
 ## Flow: one-time scheduling
